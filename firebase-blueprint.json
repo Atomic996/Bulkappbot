@@ -1,0 +1,44 @@
+{
+  "entities": {
+    "Trade": {
+      "title": "Bulk Trade",
+      "description": "A single trade execution from the Bulk WebSocket",
+      "type": "object",
+      "properties": {
+        "symbol": { "type": "string" },
+        "price": { "type": "number" },
+        "size": { "type": "number" },
+        "side": { "type": "string", "enum": ["buy", "sell"] },
+        "walletId": { "type": "string" },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["symbol", "price", "size", "side", "walletId", "timestamp"]
+    },
+    "Wallet": {
+      "title": "Trader Wallet",
+      "description": "Aggregated state and performance of a specific wallet",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "position": { "type": "string", "enum": ["flat", "long", "short"] },
+        "entryPrice": { "type": "number" },
+        "entrySize": { "type": "number" },
+        "totalPnL": { "type": "number" },
+        "winCount": { "type": "integer" },
+        "tradeCount": { "type": "integer" },
+        "lastUpdate": { "type": "number" }
+      },
+      "required": ["id", "position", "totalPnL", "winCount", "tradeCount", "lastUpdate"]
+    }
+  },
+  "firestore": {
+    "/trades/{tradeId}": {
+      "schema": "Trade",
+      "description": "Collection of all unique bulk trades"
+    },
+    "/wallets/{walletId}": {
+      "schema": "Wallet",
+      "description": "Collection of wallet performance and current positions"
+    }
+  }
+}

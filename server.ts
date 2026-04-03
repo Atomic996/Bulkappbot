@@ -76,6 +76,7 @@ botRouter.post("/auth/init", async (req: Request, res: Response) => {
     const r_init = await axios.post(`${PRIVY_URL}/siws/init`, { address }, {
       headers: {
         "Origin": ORIGIN_URL,
+        "Referer": ORIGIN_URL + "/",
         "Privy-App-Id": PRIVY_APP_ID,
         "Content-Type": "application/json"
       },

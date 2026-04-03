@@ -113,16 +113,18 @@ export const TradingBot: React.FC = () => {
     setError(null);
     
     try {
-      // 1. Get SIWS message from server
+      // 1. Get SIWS message from server (Proxying Privy to avoid CORS/Origin issues)
       const siwsRes = await axios.post('/api/bot/auth/init', { address: publicKey?.toBase58() });
       const { message } = siwsRes.data;
 
-      // 2. Sign with real wallet (This is what famous apps do)
-      const messageBytes = new TextEncoder().encode(message);
-      const signatureBytes = await signMessage(messageBytes);
-      const signatureBase64 = btoa(String.fromCharCode.apply(null, Array.from(signatureBytes)));
+      // 2. Sign the message with the real wallet (Matching user's clean logic)
+      const encodedMessage = new TextEncoder().encode(message);
+      const signed = await signMessage(encodedMessage);
+      
+      // Convert signature to base64 for Privy
+      const signatureBase64 = btoa(String.fromCharCode.apply(null, Array.from(signed)));
 
-      // 3. Start bot session on server
+      // 3. Send signature back to server to start the bot
       await axios.post('/api/bot/auth/start', {
         address: publicKey?.toBase58(),
         message,
@@ -131,6 +133,7 @@ export const TradingBot: React.FC = () => {
       
       fetchStatus();
     } catch (err: any) {
+      console.error("[Bot] Start Error:", err);
       setError(err.response?.data?.error || err.message || "Authorization failed");
     } finally {
       setIsLoading(false);

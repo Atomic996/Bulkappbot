@@ -70,7 +70,9 @@ botRouter.post("/auth/init", async (req: Request, res: Response) => {
   if (!address) return res.status(400).json({ error: "Address is required" });
 
   try {
-    console.log(`Initializing SIWS for address: ${address}`);
+    console.log(`[Auth] Initializing SIWS for: ${address}`);
+    
+    // 1. Get nonce from Privy
     const r_init = await axios.post(`${PRIVY_URL}/siws/init`, { address }, {
       headers: {
         "Origin": ORIGIN_URL,
@@ -81,22 +83,33 @@ botRouter.post("/auth/init", async (req: Request, res: Response) => {
     });
     
     const nonce = r_init.data.nonce;
-    const ts = new Date().toISOString();
+    const ts = new Date().toISOString().replace(".000Z", "Z");
     
+    // 2. Generate a temporary session key for the bot
     const sessionKeyPair = nacl.sign.keyPair();
     const sessionPubKey = bs58.encode(sessionKeyPair.publicKey);
 
-    const message = `early.bulk.trade wants you to sign in with your Solana account:\n${address}\n\n` +
+    // 3. Build the SIWS message (Matching user's clean format + session key)
+    const message = `early.bulk.trade wants you to sign in with your Solana account:\n` +
+                    `${address}\n\n` +
+                    `You are proving you own ${address}.\n\n` +
                     `Authorize bot session key: ${sessionPubKey}\n\n` +
                     `URI: https://early.bulk.trade\n` +
-                    `Version: 1\nChain ID: mainnet\nNonce: ${nonce}\nIssued At: ${ts}\nResources:\n- https://privy.io`;
+                    `Version: 1\n` +
+                    `Chain ID: mainnet\n` +
+                    `Nonce: ${nonce}\n` +
+                    `Issued At: ${ts}\n` +
+                    `Resources:\n` +
+                    `- https://privy.io`;
 
     pendingSessions.set(address, { sessionKeyPair, message });
+    
+    console.log(`[Auth] Message generated for ${address}`);
     res.json({ nonce, message });
   } catch (err: any) {
-    console.error("SIWS Init Error Details:", err.response?.data || err.message);
+    console.error("[Auth] SIWS Init Error:", err.response?.data || err.message);
     res.status(500).json({ 
-      error: "Failed to init auth", 
+      error: "Failed to initialize authentication session", 
       details: err.response?.data || err.message 
     });
   }

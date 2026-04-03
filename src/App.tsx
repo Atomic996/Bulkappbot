@@ -25,14 +25,9 @@ export default function App() {
   // You can also provide a custom RPC endpoint.
   const endpoint = useMemo(() => clusterApiUrl(network), [network]);
 
-  const wallets = useMemo(
-    () => [
-      new PhantomWalletAdapter(),
-      new SolflareWalletAdapter(),
-      new TrustWalletAdapter(),
-    ],
-    [network]
-  );
+  // Use an empty array to rely on the Wallet Standard (Standard Wallets like Phantom/Solflare are detected automatically)
+  // This prevents "Cannot redefine property" conflicts with browser extensions.
+  const wallets = useMemo(() => [], []);
 
   const onError = useCallback((error: any) => {
     console.error("Wallet Error:", error instanceof Error ? error.message : String(error));

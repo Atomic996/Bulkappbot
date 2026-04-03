@@ -242,7 +242,7 @@ export const TradingBot: React.FC = () => {
                 <div className="flex items-center gap-2">
                   <Wallet size={16} className="text-blue-500" />
                   <span className="text-lg font-mono font-black text-white uppercase tracking-tighter">
-                    ${status.balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    ${(status.balance || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </span>
                 </div>
               </div>
@@ -298,7 +298,7 @@ export const TradingBot: React.FC = () => {
                             </span>
                           </div>
                           <span className="text-xs font-mono text-zinc-400">{Math.abs(size).toFixed(4)}</span>
-                          <span className="text-xs font-mono text-zinc-400">${parseFloat(pos.price).toLocaleString()}</span>
+                          <span className="text-xs font-mono text-zinc-400">${parseFloat(pos.price || '0').toLocaleString()}</span>
                           <span className={cn(
                             "text-xs font-mono font-bold text-right",
                             pnl >= 0 ? "text-emerald-500" : "text-rose-500"

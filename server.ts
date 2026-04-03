@@ -503,6 +503,7 @@ async function startServer() {
       if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
 
       const nonce = Date.now();
+      // Use ordered keys to match Python script's OrderedDict behavior
       const payload = {
         account: this.address,
         actions: [action],

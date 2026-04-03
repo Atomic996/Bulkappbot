@@ -332,11 +332,36 @@ export const Dashboard: React.FC = () => {
         <section className="flex flex-col flex-1 overflow-hidden bg-black/40">
           {/* Performance Optimized Stats Header */}
           <div className="grid grid-cols-2 md:grid-cols-5 border-b border-white/10 bg-white/[0.02]">
-            <StatBox label="Current Price" value={`$${currentSignal?.price?.toLocaleString() || '0'}`} subValue={`${currentSignal?.change24h?.toFixed(2) || '0'}%`} color={currentSignal?.change24h && currentSignal.change24h >= 0 ? 'emerald' : 'rose'} />
-            <StatBox label="Technical Analysis" value={`${currentSignal?.technical_score?.toFixed(0) || '0'}%`} subValue="Pure Math" color="white" />
-            <StatBox label="Market Sentiment" value={currentSignal?.news_score !== undefined ? `${((currentSignal.news_score + 100) / 2).toFixed(0)}%` : '0%'} subValue="Algorithmic" color="blue" />
-            <StatBox label="Volatility (VIX)" value={currentSignal?.indicators?.atr && currentSignal?.price ? (currentSignal.indicators.atr / currentSignal.price * 100).toFixed(2) + '%' : '-'} subValue="Risk Index" color="zinc" />
-            <StatBox label="Action" value={currentSignal?.recommendation || 'HOLD'} subValue="Strategy" color={currentSignal?.recommendation?.includes('BUY') ? 'emerald' : currentSignal?.recommendation?.includes('SELL') ? 'rose' : 'zinc'} />
+            <StatBox 
+              label="Current Price" 
+              value={currentSignal?.price ? `$${Number(currentSignal.price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '---'} 
+              subValue={currentSignal?.change24h !== undefined ? `${Number(currentSignal.change24h).toFixed(2)}%` : '0.00%'} 
+              color={currentSignal?.change24h && currentSignal.change24h >= 0 ? 'emerald' : 'rose'} 
+            />
+            <StatBox 
+              label="Technical Analysis" 
+              value={currentSignal?.technical_score !== undefined ? `${Number(currentSignal.technical_score).toFixed(0)}%` : '0%'} 
+              subValue="Pure Math" 
+              color="white" 
+            />
+            <StatBox 
+              label="Market Sentiment" 
+              value={currentSignal?.news_score !== undefined ? `${((Number(currentSignal.news_score) + 100) / 2).toFixed(0)}%` : '0%'} 
+              subValue="Algorithmic" 
+              color="blue" 
+            />
+            <StatBox 
+              label="Volatility (VIX)" 
+              value={currentSignal?.indicators?.atr && currentSignal?.price ? (Number(currentSignal.indicators.atr) / Number(currentSignal.price) * 100).toFixed(2) + '%' : '-'} 
+              subValue="Risk Index" 
+              color="zinc" 
+            />
+            <StatBox 
+              label="Action" 
+              value={currentSignal?.recommendation || 'HOLD'} 
+              subValue="Strategy" 
+              color={currentSignal?.recommendation?.includes('BUY') ? 'emerald' : currentSignal?.recommendation?.includes('SELL') ? 'rose' : 'zinc'} 
+            />
           </div>
 
           {/* Viewport Tabs */}

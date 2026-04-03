@@ -40,7 +40,7 @@ export const AssetCard: React.FC<AssetCardProps> = ({ signal, isSelected, onClic
             <span className="text-[8px] md:text-[9px] font-mono text-zinc-700">/ USD</span>
           </div>
           <p className="text-lg md:text-xl font-mono font-black text-zinc-100 tracking-tighter">
-            ${signal.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            ${(signal.price || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </p>
         </div>
         <div className={cn(

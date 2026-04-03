@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { db, auth } from '../firebase';
+import { db, auth } from '../firebase.js';
 import { 
   collection, 
   query, 

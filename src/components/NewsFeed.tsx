@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { ExternalLink, Info, AlertTriangle, Globe, Landmark } from 'lucide-react';
-import { NewsItem } from '../types';
+import { NewsItem } from '../types.js';
 import { formatDistanceToNow } from 'date-fns';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';

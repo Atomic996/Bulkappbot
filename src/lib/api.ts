@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { PriceData, NewsItem, Timeframe } from '../types';
+import { PriceData, NewsItem, Timeframe } from '../types.js';
 
 // CryptoCompare API for historical data (free tier)
 const CRYPTOCOMPARE_API = 'https://min-api.cryptocompare.com/data';

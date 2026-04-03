@@ -3,7 +3,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Buffer } from 'buffer';
 import process from 'process';
-import App from './App.tsx';
+import App from './App.js';
 import './index.css';
 
 // Polyfills for Solana Wallet Adapter

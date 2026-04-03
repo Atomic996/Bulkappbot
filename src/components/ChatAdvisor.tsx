@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { MessageSquare, Send, X, Bot, User, Sparkles } from 'lucide-react';
-import { getChatResponse } from '../lib/gemini';
-import { AssetSignal, NewsItem } from '../types';
+import { getChatResponse } from '../lib/gemini.js';
+import { AssetSignal, NewsItem } from '../types.js';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 

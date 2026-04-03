@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { createChart, ColorType, IChartApi, ISeriesApi, CandlestickData, UTCTimestamp } from 'lightweight-charts';
-import { PriceData, Timeframe } from '../types';
+import { PriceData, Timeframe } from '../types.js';
 import { Loader2, Info, Maximize2 } from 'lucide-react';
 
 interface ChartProps {

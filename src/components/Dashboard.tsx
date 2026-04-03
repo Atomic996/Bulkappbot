@@ -22,19 +22,19 @@ import {
   Clock,
   Wallet
 } from 'lucide-react';
-import { AssetSignal, PriceData, NewsItem, Timeframe } from '../types';
-import { fetchHistoricalData, fetchNews } from '../lib/api';
-import { calculateIndicators, calculateTechnicalScore, backtestStrategy, calculateFinalScore, getRecommendation } from '../lib/indicators';
-import { analyzeNews, calculateNewsScore } from '../lib/gemini';
-import { analyzeSentimentAlgorithmic, calculateAlgorithmicNewsScore } from '../lib/sentiment';
-import { AssetCard } from './AssetCard';
-import { NewsFeed } from './NewsFeed';
-import { Chart } from './Chart';
-import { ChatAdvisor } from './ChatAdvisor';
-import { BulkAnalysis } from './BulkAnalysis';
-import { TradingBot } from './TradingBot';
-import { WalletView } from './WalletView';
-import TradingViewWidget from './TradingViewWidget';
+import { AssetSignal, PriceData, NewsItem, Timeframe } from '../types.js';
+import { fetchHistoricalData, fetchNews } from '../lib/api.js';
+import { calculateIndicators, calculateTechnicalScore, backtestStrategy, calculateFinalScore, getRecommendation } from '../lib/indicators.js';
+import { analyzeNews, calculateNewsScore } from '../lib/gemini.js';
+import { analyzeSentimentAlgorithmic, calculateAlgorithmicNewsScore } from '../lib/sentiment.js';
+import { AssetCard } from './AssetCard.js';
+import { NewsFeed } from './NewsFeed.js';
+import { Chart } from './Chart.js';
+import { ChatAdvisor } from './ChatAdvisor.js';
+import { BulkAnalysis } from './BulkAnalysis.js';
+import { TradingBot } from './TradingBot.js';
+import { WalletView } from './WalletView.js';
+import TradingViewWidget from './TradingViewWidget.js';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 

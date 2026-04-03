@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { TrendingUp, TrendingDown, Info, AlertCircle } from 'lucide-react';
-import { AssetSignal } from '../types';
+import { AssetSignal } from '../types.js';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 

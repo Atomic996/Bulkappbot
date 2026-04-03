@@ -9,8 +9,8 @@ import fs from "fs";
 import axios from "axios";
 import nacl from "tweetnacl";
 import bs58 from "bs58";
-import { calculateIndicators, calculateTechnicalScore } from "./src/lib/indicators";
-import { fetchHistoricalData } from "./src/lib/api";
+import { calculateIndicators, calculateTechnicalScore } from "./src/lib/indicators.js";
+import { fetchHistoricalData } from "./src/lib/api.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

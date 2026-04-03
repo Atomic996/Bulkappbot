@@ -7,7 +7,7 @@ import {
   ATR,
   OBV,
 } from 'technicalindicators';
-import { PriceData, IndicatorData } from '../types';
+import { PriceData, IndicatorData } from '../types.js';
 
 export function calculateIndicators(data: PriceData[]): IndicatorData {
   if (data.length < 200) return {};

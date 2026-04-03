@@ -1,4 +1,4 @@
-import { NewsItem } from "../types";
+import { NewsItem } from "../types.js";
 
 const BULLISH_KEYWORDS = [
   'etf', 'approval', 'bullish', 'surge', 'gains', 'adoption', 'partnership', 

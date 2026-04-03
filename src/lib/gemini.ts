@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type, GenerateContentParameters, GenerateContentResponse } from "@google/genai";
-import { NewsItem } from "../types";
+import { NewsItem } from "../types.js";
 
 let aiInstance: GoogleGenAI | null = null;
 

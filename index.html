@@ -3,26 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>My Google AI Studio App</title>
-    <script>
-      (function() {
-        // Stub global to prevent polyfills from trying to overwrite window.fetch
-        if (typeof global === 'undefined') {
-          const g = {};
-          try {
-            Object.defineProperty(g, 'fetch', {
-              get: function() { return window.fetch; },
-              set: function(v) { console.warn('Ignored global.fetch overwrite attempt'); },
-              configurable: true,
-              enumerable: true
-            });
-            window.global = g;
-          } catch (e) {
-            window.global = window;
-          }
-        }
-      })();
-    </script>
+    <title>Sentinel.AI - Crypto Fusion Dashboard</title>
   </head>
   <body>
     <div id="root"></div>

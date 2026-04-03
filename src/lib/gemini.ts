@@ -1,7 +1,18 @@
 import { GoogleGenAI, Type, GenerateContentParameters, GenerateContentResponse } from "@google/genai";
 import { NewsItem } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+let aiInstance: GoogleGenAI | null = null;
+
+function getAI() {
+  if (!aiInstance) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey || apiKey === "undefined") {
+      throw new Error("GEMINI_API_KEY is not set. Please check your environment variables.");
+    }
+    aiInstance = new GoogleGenAI({ apiKey });
+  }
+  return aiInstance;
+}
 
 async function callGeminiWithRetry(
   params: GenerateContentParameters,
@@ -9,6 +20,7 @@ async function callGeminiWithRetry(
   initialDelay = 2000
 ): Promise<GenerateContentResponse> {
   let lastError: any;
+  const ai = getAI();
   for (let i = 0; i < maxRetries; i++) {
     try {
       return await ai.models.generateContent(params);

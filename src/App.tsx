@@ -9,9 +9,7 @@ import { WalletAdapterNetwork } from '@solana/wallet-adapter-base';
 import { 
   PhantomWalletAdapter, 
   SolflareWalletAdapter,
-  TrustWalletAdapter,
-  CoinbaseWalletAdapter,
-  TorusWalletAdapter
+  TrustWalletAdapter
 } from '@solana/wallet-adapter-wallets';
 import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
 import { clusterApiUrl } from '@solana/web3.js';
@@ -32,8 +30,6 @@ export default function App() {
       new PhantomWalletAdapter(),
       new SolflareWalletAdapter(),
       new TrustWalletAdapter(),
-      new CoinbaseWalletAdapter(),
-      new TorusWalletAdapter(),
     ],
     [network]
   );

@@ -499,59 +499,65 @@ async function startServer() {
       });
     }
 
-    async sendAction(action: any) {
+    async sendAction(method: string, params: any) {
       if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
 
-      const nonce = Date.now();
-      // Use ordered keys to match Python script's OrderedDict behavior
+      const ts = Date.now();
       const payload = {
-        account: this.address,
-        actions: [action],
-        nonce,
-        type: "action"
+        method,
+        params,
+        id: ts
       };
 
       const payloadJson = JSON.stringify(payload);
-      const signature = bs58.encode(nacl.sign.detached(Buffer.from(payloadJson), this.sessionKeyPair.secretKey));
-      const signer = bs58.encode(this.sessionKeyPair.publicKey);
+      
+      // The signature for the action must be base64 encoded for Bulk.trade
+      let signature = "";
+      
+      if (this.secretKey) {
+        // Server-side signing with private key
+        const signatureBytes = nacl.sign.detached(Buffer.from(payloadJson), this.secretKey);
+        signature = Buffer.from(signatureBytes).toString("base64");
+      } else {
+        // Fallback to session key if secretKey not provided
+        const signatureBytes = nacl.sign.detached(Buffer.from(payloadJson), this.sessionKeyPair.secretKey);
+        signature = Buffer.from(signatureBytes).toString("base64");
+      }
 
       const msg = {
-        method: "post",
-        id: 10001,
-        request: {
-          type: "action",
-          payload: { ...payload, signature, signer }
-        }
+        method: "action",
+        params: {
+          payload: payloadJson,
+          signature: signature
+        },
+        id: ts + 1
       };
 
       this.ws.send(JSON.stringify(msg));
     }
 
     async placeOrder(symbol: string, side: 'buy' | 'sell', size: number) {
-      const action = {
-        m: {
-          b: side === 'buy',
-          c: symbol,
-          r: false,
-          sz: size.toFixed(4),
-          tif: "ioc"
-        }
-      };
-      await this.sendAction(action);
+      await this.sendAction("placeOrder", {
+        symbol,
+        side,
+        size: size.toString(),
+        price: "0", // Market order
+        type: "market",
+        timeInForce: "GTC"
+      });
       addBotLog(`Placed ${side.toUpperCase()} order for ${symbol} | Size: ${size}`);
     }
 
     async closePosition(symbol: string, size: number, side: string) {
-      const action = {
-        m: {
-          b: side === 'short', 
-          c: symbol,
-          r: true,
-          sz: Math.abs(size).toFixed(4),
-          tif: "ioc"
-        }
-      };
-      await this.sendAction(action);
+      await this.sendAction("placeOrder", {
+        symbol,
+        side: side === 'long' ? 'sell' : 'buy',
+        size: Math.abs(size).toString(),
+        price: "0",
+        type: "market",
+        timeInForce: "GTC",
+        reduceOnly: true
+      });
       addBotLog(`Closing ${side.toUpperCase()} position for ${symbol}`);
     }
 

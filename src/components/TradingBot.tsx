@@ -59,7 +59,14 @@ export const TradingBot: React.FC = () => {
       }
 
       const res = await axios.get('/api/bot/status');
-      setStatus(res.data);
+      if (res.data && typeof res.data === 'object') {
+        setStatus(prev => ({
+          ...prev,
+          ...res.data,
+          positions: res.data.positions || [],
+          logs: res.data.logs || []
+        }));
+      }
     } catch (err: any) {
       if (axios.isAxiosError(err)) {
         const data = err.response?.data;
@@ -105,13 +112,14 @@ export const TradingBot: React.FC = () => {
       // 2. Sign message with wallet
       const messageBytes = new TextEncoder().encode(message);
       const signatureBytes = await signMessage(messageBytes);
-      const signatureBase58 = bs58.encode(signatureBytes);
+      // Privy SIWS expects base64 for Solana signatures
+      const signatureBase64 = Buffer.from(signatureBytes).toString('base64');
 
       // 3. Authenticate and start bot on server
       const authRes = await axios.post('/api/bot/auth/start', {
         address: publicKey.toBase58(),
         message,
-        signature: signatureBase58
+        signature: signatureBase64
       });
       
       if (authRes.data.error) {

@@ -47,7 +47,7 @@ export const AssetCard: React.FC<AssetCardProps> = ({ signal, isSelected, onClic
           "flex items-center gap-1 font-mono text-[9px] md:text-[10px] font-bold",
           isPositive ? "text-emerald-500" : "text-rose-500"
         )}>
-          {isPositive ? '+' : ''}{signal.change24h.toFixed(2)}%
+          {isPositive ? '+' : ''}{(signal.change24h || 0).toFixed(2)}%
         </div>
       </div>
 
@@ -58,7 +58,7 @@ export const AssetCard: React.FC<AssetCardProps> = ({ signal, isSelected, onClic
             <div className="h-1 flex-1 bg-white/5 rounded-full overflow-hidden">
               <div className="h-full bg-white/60" style={{ width: `${signal.technical_score}%` }} />
             </div>
-            <span className="text-[8px] md:text-[9px] font-mono text-zinc-400">{signal.technical_score.toFixed(0)}</span>
+            <span className="text-[8px] md:text-[9px] font-mono text-zinc-400">{(signal.technical_score || 0).toFixed(0)}</span>
           </div>
         </div>
         <div className="space-y-1">
@@ -100,7 +100,7 @@ export const AssetCard: React.FC<AssetCardProps> = ({ signal, isSelected, onClic
             {signal.recommendation}
           </span>
         </div>
-        <span className="text-[7px] md:text-[8px] font-mono text-zinc-600 uppercase tracking-tighter">Confidence: {signal.final_score.toFixed(0)}%</span>
+        <span className="text-[7px] md:text-[8px] font-mono text-zinc-600 uppercase tracking-tighter">Confidence: {(signal.final_score || 0).toFixed(0)}%</span>
       </div>
     </motion.div>
   );

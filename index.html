@@ -3,7 +3,28 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Sentinel.AI - Crypto Fusion Dashboard</title>
+    <title>Bulk Flow | Algorithmic Trend Intelligence</title>
+    <script>
+      // Safety script to prevent "Cannot redefine property" errors from injected wallet providers
+      (function() {
+        const originalDefineProperty = Object.defineProperty;
+        Object.defineProperty = function(obj, prop, descriptor) {
+          if (obj === window && (prop === 'solana' || prop === 'phantom' || prop === 'ethereum')) {
+            if (window[prop]) {
+              return window[prop];
+            }
+          }
+          try {
+            return originalDefineProperty.apply(this, arguments);
+          } catch (e) {
+            if (prop === 'solana' || prop === 'phantom' || prop === 'ethereum') {
+              return obj[prop];
+            }
+            throw e;
+          }
+        };
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

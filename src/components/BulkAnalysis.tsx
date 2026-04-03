@@ -122,13 +122,15 @@ export const BulkAnalysis: React.FC = () => {
       socket.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data);
-          if (message.type === 'trade') {
+          if (message.type === 'trade' && message.data) {
             setTrades(prev => [message.data, ...prev].slice(0, 50));
             setLastSync(Date.now());
-          } else if (message.type === 'wallets_update' || message.type === 'init_wallets') {
+          } else if ((message.type === 'wallets_update' || message.type === 'init_wallets') && Array.isArray(message.data)) {
             const walletMap: Record<string, WalletState> = {};
             message.data.forEach((w: WalletState) => {
-              walletMap[w.id] = w;
+              if (w && w.id) {
+                walletMap[w.id] = w;
+              }
             });
             setWallets(prev => ({ ...prev, ...walletMap }));
             setLastSync(Date.now());
@@ -411,7 +413,7 @@ export const BulkAnalysis: React.FC = () => {
                         {trade.side}
                       </span>
                     </div>
-                    <span className="text-[10px] font-mono text-zinc-400">${trade.price.toLocaleString()}</span>
+                    <span className="text-[10px] font-mono text-zinc-400">${(trade.price || 0).toLocaleString()}</span>
                     <span className="text-[10px] font-mono text-zinc-400">{trade.size.toFixed(4)}</span>
                     <span className="text-[9px] font-mono text-zinc-600 text-right truncate">
                       {trade.walletId.slice(0, 8)}...

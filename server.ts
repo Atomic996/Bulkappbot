@@ -31,6 +31,7 @@ let botBalance = 0;
 let botAddress: string | null = null;
 let botPositions: any[] = [];
 let botLogs: string[] = [];
+const pendingSessions = new Map<string, { sessionKeyPair: nacl.SignKeyPair; message: string }>();
 
 const app = express();
 app.use(express.json());
@@ -46,7 +47,7 @@ botRouter.get("/status", (req: Request, res: Response) => {
     positions: botPositions,
     logs: botLogs,
     address: botAddress,
-    hasKey: true
+    hasSession: !!bulkClient
   });
 });
 
@@ -69,10 +70,19 @@ botRouter.post("/auth/init", async (req: Request, res: Response) => {
     
     const nonce = r_init.data.nonce;
     const ts = new Date().toISOString();
+    
+    // Generate a temporary session key for this specific address
+    const sessionKeyPair = nacl.sign.keyPair();
+    const sessionPubKey = bs58.encode(sessionKeyPair.publicKey);
+
     const message = `early.bulk.trade wants you to sign in with your Solana account:\n${address}\n\n` +
-                    `You are proving you own ${address}.\n\nURI: https://early.bulk.trade\n` +
+                    `Authorize bot session key: ${sessionPubKey}\n\n` +
+                    `URI: https://early.bulk.trade\n` +
                     `Version: 1\nChain ID: mainnet\nNonce: ${nonce}\nIssued At: ${ts}\nResources:\n- https://privy.io`;
 
+    // Store pending session
+    pendingSessions.set(address, { sessionKeyPair, message });
+    
     res.json({ nonce, message });
   } catch (err) {
     console.error("SIWS Init Error:", err);
@@ -83,17 +93,24 @@ botRouter.post("/auth/init", async (req: Request, res: Response) => {
 botRouter.post("/auth/start", async (req: Request, res: Response) => {
   const { address, message, signature } = req.body;
   
+  const pending = pendingSessions.get(address);
+  if (!pending || pending.message !== message) {
+    return res.status(400).json({ error: "Invalid or expired session request" });
+  }
+
   if (botEnabled) {
     bulkClient?.stop();
   }
 
-  bulkClient = new BulkClient();
+  bulkClient = new BulkClient(pending.sessionKeyPair);
   const ok = await bulkClient.authenticate(address, message, signature);
+  
   if (ok) {
+    pendingSessions.delete(address);
     bulkClient.connect();
     botEnabled = true;
     botStatus = "Monitoring";
-    addBotLog("Bot Started with Wallet.");
+    addBotLog("Bot Authorized & Started.");
     res.json({ success: true, enabled: true });
   } else {
     res.status(500).json({ error: "Authentication failed" });
@@ -163,59 +180,36 @@ class BulkClient {
   private token: string | null = null;
   private address: string | null = null;
   private sessionKeyPair: nacl.SignKeyPair;
-  private secretKey: Uint8Array | null = null;
 
-  constructor(privateKeyBase58: string | null = null) {
-    if (privateKeyBase58) this.secretKey = bs58.decode(privateKeyBase58);
-    this.sessionKeyPair = nacl.sign.keyPair();
+  constructor(sessionKeyPair: nacl.SignKeyPair) {
+    this.sessionKeyPair = sessionKeyPair;
   }
 
-  async authenticate(address?: string, message?: string, signature?: string, token?: string) {
+  async authenticate(address: string, message: string, signature: string) {
     const PRIVY_APP_ID = "cmbuls93q01jol20lf0ak0plb";
     const PRIVY_URL = "https://auth.privy.io/api/v1";
     const ORIGIN_URL = "https://early.bulk.trade";
-    const headers = { "Origin": ORIGIN_URL, "Referer": ORIGIN_URL + "/", "Privy-App-Id": PRIVY_APP_ID, "Content-Type": "application/json" };
-
-    if (token && address) {
-      this.token = token;
-      this.address = address;
-      botAddress = address;
-      return true;
-    }
+    const headers = { 
+      "Origin": ORIGIN_URL, 
+      "Referer": ORIGIN_URL + "/", 
+      "Privy-App-Id": PRIVY_APP_ID, 
+      "Content-Type": "application/json" 
+    };
 
     try {
-      let authAddress = address;
-      let authMessage = message;
-      let authSignature = signature;
-
-      if (this.secretKey && !authAddress) {
-        const keyPair = nacl.sign.keyPair.fromSecretKey(this.secretKey);
-        authAddress = bs58.encode(keyPair.publicKey);
-        const r_init = await axios.post(`${PRIVY_URL}/siws/init`, { address: authAddress }, { headers });
-        const nonce = r_init.data.nonce;
-        const ts = new Date().toISOString();
-        authMessage = `early.bulk.trade wants you to sign in with your Solana account:\n${authAddress}\n\n` +
-                      `You are proving you own ${authAddress}.\n\nURI: https://early.bulk.trade\n` +
-                      `Version: 1\nChain ID: mainnet\nNonce: ${nonce}\nIssued At: ${ts}\nResources:\n- https://privy.io`;
-        const signatureBytes = nacl.sign.detached(Buffer.from(authMessage), this.secretKey);
-        authSignature = Buffer.from(signatureBytes).toString("base64");
-      }
-
-      if (!authAddress || !authMessage || !authSignature) return false;
-
       const r_auth = await axios.post(`${PRIVY_URL}/siws/authenticate`, {
         connectorType: "solana_adapter",
-        message: authMessage,
-        signature: authSignature,
+        message: message,
+        signature: signature,
         message_type: "plain",
         mode: "login-or-sign-up",
         walletClientType: "Phantom"
       }, { headers });
 
       this.token = r_auth.data.token;
-      this.address = authAddress;
-      botAddress = authAddress;
-      addBotLog(`Authenticated ${authAddress.slice(0, 6)}...`);
+      this.address = address;
+      botAddress = address;
+      addBotLog(`Authenticated ${address.slice(0, 6)}...`);
       return true;
     } catch (err) {
       console.error("Bulk Auth Error:", err);
@@ -246,21 +240,73 @@ class BulkClient {
   async sendAction(method: string, params: any) {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
     const ts = Date.now();
-    const payload = { method, params, id: ts };
+    
+    // The Python script shows a specific structure for actions
+    // payload = {"account": addr, "actions": [action], "nonce": ts, "type": "action"}
+    const action = { [method]: params };
+    const payload = {
+      account: this.address,
+      actions: [action],
+      nonce: ts,
+      type: "action"
+    };
+
+    // Important: Bulk.trade requires consistent JSON serialization for signing
     const payloadJson = JSON.stringify(payload);
-    const signatureBytes = nacl.sign.detached(Buffer.from(payloadJson), this.secretKey || this.sessionKeyPair.secretKey);
-    const signature = Buffer.from(signatureBytes).toString("base64");
-    const msg = { method: "action", params: { payload: payloadJson, signature }, id: ts + 1 };
+    const signatureBytes = nacl.sign.detached(Buffer.from(payloadJson), this.sessionKeyPair.secretKey);
+    const signature = bs58.encode(signatureBytes);
+    const signer = bs58.encode(this.sessionKeyPair.publicKey);
+
+    // Python uses method: "post" for actions
+    const msg = {
+      method: "post",
+      id: ts,
+      request: {
+        type: "action",
+        payload: {
+          ...payload,
+          signature,
+          signer
+        }
+      }
+    };
+    
     this.ws.send(JSON.stringify(msg));
   }
 
+  async setLeverage(symbol: string, leverage: number) {
+    // Correct format from Python: {"updateUserSettings": {"m": {symbol: int(leverage)}}}
+    await this.sendAction("updateUserSettings", { m: { [symbol]: leverage } });
+    addBotLog(`Updated Leverage for ${symbol} to ${leverage}x`);
+  }
+
   async placeOrder(symbol: string, side: 'buy' | 'sell', size: number) {
-    await this.sendAction("placeOrder", { symbol, side, size: size.toString(), price: "0", type: "market", timeInForce: "GTC" });
-    addBotLog(`Placed ${side.toUpperCase()} order for ${symbol} | Size: ${size}`);
+    // Formatting size based on asset (from Python logic)
+    const formattedSize = symbol.startsWith("BTC") ? size.toFixed(4) : size.toFixed(2);
+    
+    // Python order structure: {"m": {"b": is_buy, "c": symbol, "r": False, "sz": size}}
+    const params = {
+      b: side === 'buy',
+      c: symbol,
+      r: false,
+      sz: formattedSize
+    };
+    
+    await this.sendAction("m", params);
+    addBotLog(`Placed ${side.toUpperCase()} order for ${symbol} | Size: ${formattedSize}`);
   }
 
   async closePosition(symbol: string, size: number, side: string) {
-    await this.sendAction("placeOrder", { symbol, side: side === 'long' ? 'sell' : 'buy', size: Math.abs(size).toString(), price: "0", type: "market", timeInForce: "GTC", reduceOnly: true });
+    const formattedSize = symbol.startsWith("BTC") ? Math.abs(size).toFixed(4) : Math.abs(size).toFixed(2);
+    const params = {
+      b: side === 'short', // if closing short, we need to buy
+      c: symbol,
+      r: true, // reduceOnly
+      sz: formattedSize,
+      p: "0", // market
+      tif: "ioc"
+    };
+    await this.sendAction("m", params);
     addBotLog(`Closing ${side.toUpperCase()} position for ${symbol}`);
   }
 

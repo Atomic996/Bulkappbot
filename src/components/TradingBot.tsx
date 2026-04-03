@@ -30,7 +30,7 @@ interface BotStatus {
   balance: number;
   positions: any[];
   logs: string[];
-  hasKey: boolean;
+  hasSession: boolean;
   address: string | null;
 }
 
@@ -42,7 +42,7 @@ export const TradingBot: React.FC = () => {
     balance: 0,
     positions: [],
     logs: [],
-    hasKey: false,
+    hasSession: false,
     address: null
   });
   const [isLoading, setIsLoading] = useState(false);

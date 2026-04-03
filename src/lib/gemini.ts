@@ -14,8 +14,9 @@ function getAI() {
     }
     
     if (!apiKey) {
-      apiKey = (import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) ||
-               (import.meta.env && import.meta.env.GEMINI_API_KEY) || "";
+      const meta = import.meta as any;
+      apiKey = (meta.env && meta.env.VITE_GEMINI_API_KEY) ||
+               (meta.env && meta.env.GEMINI_API_KEY) || "";
     }
                    
     if (!apiKey || apiKey === "undefined" || apiKey === "MY_GEMINI_API_KEY") {

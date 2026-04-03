@@ -5,9 +5,21 @@ let aiInstance: GoogleGenAI | null = null;
 
 function getAI() {
   if (!aiInstance) {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey || apiKey === "undefined") {
-      throw new Error("GEMINI_API_KEY is not set. Please check your environment variables.");
+    // Check multiple possible locations for the API key with safety checks
+    let apiKey = "";
+    try {
+      apiKey = process.env.GEMINI_API_KEY || "";
+    } catch (e) {
+      // process.env might not be defined
+    }
+    
+    if (!apiKey) {
+      apiKey = (import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) ||
+               (import.meta.env && import.meta.env.GEMINI_API_KEY) || "";
+    }
+                   
+    if (!apiKey || apiKey === "undefined" || apiKey === "MY_GEMINI_API_KEY") {
+      throw new Error("GEMINI_API_KEY is not set. Please check your environment variables in the Secrets panel.");
     }
     aiInstance = new GoogleGenAI({ apiKey });
   }

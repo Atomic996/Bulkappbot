@@ -10,15 +10,14 @@
         const originalDefineProperty = Object.defineProperty;
         Object.defineProperty = function(obj, prop, descriptor) {
           if (obj === window && (prop === 'solana' || prop === 'phantom' || prop === 'ethereum')) {
-            if (window[prop]) {
-              return window[prop];
-            }
+            console.log(`Preventing redefinition of ${prop}`);
+            return true;
           }
           try {
-            return originalDefineProperty.apply(this, arguments);
+            return originalDefineProperty.call(Object, obj, prop, descriptor);
           } catch (e) {
             if (prop === 'solana' || prop === 'phantom' || prop === 'ethereum') {
-              return obj[prop];
+              return true;
             }
             throw e;
           }

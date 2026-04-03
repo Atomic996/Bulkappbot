@@ -35,7 +35,7 @@ interface BotStatus {
 }
 
 export const TradingBot: React.FC = () => {
-  const { publicKey, signMessage, connected, wallet, select } = useWallet();
+  const { publicKey, signMessage, connected, wallet, disconnect } = useWallet();
   const [status, setStatus] = useState<BotStatus>({
     enabled: false,
     status: "Initializing...",
@@ -102,18 +102,25 @@ export const TradingBot: React.FC = () => {
     setError(null);
     
     try {
+      console.log("Starting bot with address:", publicKey.toBase58());
+      
       // 1. Get nonce and message from server
       const siwsRes = await axios.post('/api/bot/auth/init', { address: publicKey.toBase58() });
       
-      const { message, error: siwsError } = siwsRes.data;
+      if (!siwsRes.data || !siwsRes.data.message) {
+        throw new Error("Server failed to generate SIWS message");
+      }
       
-      if (siwsError) throw new Error(siwsError);
+      const { message } = siwsRes.data;
+      console.log("SIWS Message received, requesting signature...");
 
       // 2. Sign message with wallet
       const messageBytes = new TextEncoder().encode(message);
       const signatureBytes = await signMessage(messageBytes);
+      
       // Privy SIWS expects base64 for Solana signatures
-      const signatureBase64 = Buffer.from(signatureBytes).toString('base64');
+      const signatureBase64 = btoa(String.fromCharCode.apply(null, Array.from(signatureBytes)));
+      console.log("Signature obtained, authenticating on server...");
 
       // 3. Authenticate and start bot on server
       const authRes = await axios.post('/api/bot/auth/start', {
@@ -123,12 +130,13 @@ export const TradingBot: React.FC = () => {
       });
       
       if (authRes.data.error) {
-        setError(authRes.data.error);
+        throw new Error(authRes.data.error);
       } else {
+        console.log("Bot started successfully!");
         fetchStatus();
       }
     } catch (err: any) {
-      console.error("Bot start failed:", err?.message || String(err));
+      console.error("Bot start failed:", err);
       const msg = err.response?.data?.error || err.message || "Failed to start bot with wallet";
       setError(msg);
     } finally {
@@ -154,8 +162,6 @@ export const TradingBot: React.FC = () => {
     }
   };
 
-  // if (!status) return null; // Removed since we have initial state
-
   return (
     <div className="flex-1 flex flex-col gap-6 p-4 md:p-8 overflow-hidden h-full">
       {/* Header Section */}
@@ -172,13 +178,11 @@ export const TradingBot: React.FC = () => {
         <div className="flex items-center gap-4">
           <div className="flex flex-col items-end gap-1">
             <WalletMultiButton className="!bg-zinc-900 !border !border-white/10 !rounded-sm !text-[10px] !font-black !uppercase !tracking-widest !h-10 hover:!bg-zinc-800 transition-all" />
-            {wallet && !connected && (
-              <button 
-                onClick={() => select(null)}
-                className="text-[8px] font-black text-zinc-500 uppercase tracking-widest hover:text-white transition-colors underline underline-offset-4"
-              >
-                Change Wallet
-              </button>
+            {connected && (
+              <div className="flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-[8px] font-black text-emerald-500 uppercase tracking-widest">Wallet Linked</span>
+              </div>
             )}
           </div>
           
@@ -201,13 +205,30 @@ export const TradingBot: React.FC = () => {
             )}
             {status.enabled ? "Stop Bot" : "Start Bot"}
           </button>
+          
+          {connected && !status.enabled && (
+            <button
+              onClick={() => disconnect()}
+              className="p-3 bg-zinc-900 border border-white/10 rounded-sm hover:bg-zinc-800 transition-all text-zinc-500 hover:text-white"
+              title="Disconnect Wallet"
+            >
+              <Square size={16} />
+            </button>
+          )}
         </div>
       </div>
 
       {error && (
-        <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-sm flex items-center gap-3">
-          <AlertCircle size={16} className="text-rose-500" />
-          <p className="text-xs font-bold text-rose-200 uppercase tracking-widest">{error}</p>
+        <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-sm flex flex-col gap-2">
+          <div className="flex items-center gap-3">
+            <AlertCircle size={16} className="text-rose-500" />
+            <p className="text-xs font-bold text-rose-200 uppercase tracking-widest">{error}</p>
+          </div>
+          {error.includes('405') && (
+            <p className="text-[10px] text-rose-400 font-mono italic">
+              Note: 405 error usually means the API route is not correctly configured on the server.
+            </p>
+          )}
         </div>
       )}
 
@@ -223,6 +244,24 @@ export const TradingBot: React.FC = () => {
             </p>
           </div>
           <WalletMultiButton className="!bg-white !text-black !font-black !uppercase !tracking-widest !rounded-sm hover:!bg-zinc-200 transition-all" />
+        </div>
+      )}
+
+      {connected && !status.enabled && !isLoading && (
+        <div className="p-8 bg-blue-500/5 border border-blue-500/20 rounded-sm flex flex-col items-center gap-4">
+          <div className="flex items-center gap-3">
+            <ShieldCheck size={20} className="text-blue-500" />
+            <span className="text-xs font-black text-white uppercase tracking-widest">Step 2: Authorize Bot Session</span>
+          </div>
+          <p className="text-[10px] text-zinc-500 font-mono text-center max-w-sm">
+            Wallet connected. Now you need to sign a one-time message to authorize the bot to trade on your behalf.
+          </p>
+          <button 
+            onClick={startBotWithWallet}
+            className="px-6 py-2 bg-blue-500 text-white text-[10px] font-black uppercase tracking-widest rounded-sm hover:bg-blue-600 transition-all"
+          >
+            Sign & Authorize
+          </button>
         </div>
       )}
 

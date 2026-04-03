@@ -332,10 +332,10 @@ export const Dashboard: React.FC = () => {
         <section className="flex flex-col flex-1 overflow-hidden bg-black/40">
           {/* Performance Optimized Stats Header */}
           <div className="grid grid-cols-2 md:grid-cols-5 border-b border-white/10 bg-white/[0.02]">
-            <StatBox label="Current Price" value={`$${currentSignal?.price.toLocaleString() || '0'}`} subValue={`${currentSignal?.change24h.toFixed(2)}%`} color={currentSignal?.change24h && currentSignal.change24h >= 0 ? 'emerald' : 'rose'} />
-            <StatBox label="Technical Analysis" value={`${currentSignal?.technical_score.toFixed(0)}%`} subValue="Pure Math" color="white" />
+            <StatBox label="Current Price" value={`$${currentSignal?.price?.toLocaleString() || '0'}`} subValue={`${currentSignal?.change24h?.toFixed(2) || '0'}%`} color={currentSignal?.change24h && currentSignal.change24h >= 0 ? 'emerald' : 'rose'} />
+            <StatBox label="Technical Analysis" value={`${currentSignal?.technical_score?.toFixed(0) || '0'}%`} subValue="Pure Math" color="white" />
             <StatBox label="Market Sentiment" value={currentSignal?.news_score !== undefined ? `${((currentSignal.news_score + 100) / 2).toFixed(0)}%` : '0%'} subValue="Algorithmic" color="blue" />
-            <StatBox label="Volatility (VIX)" value={currentSignal?.indicators.atr ? (currentSignal.indicators.atr / currentSignal.price * 100).toFixed(2) + '%' : '-'} subValue="Risk Index" color="zinc" />
+            <StatBox label="Volatility (VIX)" value={currentSignal?.indicators?.atr && currentSignal?.price ? (currentSignal.indicators.atr / currentSignal.price * 100).toFixed(2) + '%' : '-'} subValue="Risk Index" color="zinc" />
             <StatBox label="Action" value={currentSignal?.recommendation || 'HOLD'} subValue="Strategy" color={currentSignal?.recommendation?.includes('BUY') ? 'emerald' : currentSignal?.recommendation?.includes('SELL') ? 'rose' : 'zinc'} />
           </div>
 
@@ -530,7 +530,7 @@ export const Dashboard: React.FC = () => {
                             </svg>
                             <div className="absolute inset-0 flex flex-col items-center justify-center">
                               <span className="text-3xl font-mono font-black tracking-tighter">
-                                {currentSignal?.technical_score.toFixed(0)}%
+                                {currentSignal?.technical_score?.toFixed(0) || '0'}%
                               </span>
                             </div>
                           </div>
@@ -554,7 +554,7 @@ export const Dashboard: React.FC = () => {
                             }
                           </p>
                           <div className="mt-4 flex items-center justify-between border-t border-white/5 pt-3">
-                            <span className="text-[8px] font-mono text-zinc-600 uppercase tracking-widest">Confidence: {currentSignal?.final_score.toFixed(1)}%</span>
+                            <span className="text-[8px] font-mono text-zinc-600 uppercase tracking-widest">Confidence: {currentSignal?.final_score?.toFixed(1) || '0'}%</span>
                           </div>
                         </div>
                       </div>
@@ -563,17 +563,17 @@ export const Dashboard: React.FC = () => {
                     <div className="p-8 grid md:grid-cols-2 gap-8 content-start">
                       <div className="space-y-6">
                         <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-zinc-500 border-b border-white/10 pb-2">Momentum Matrix</h3>
-                        <IndicatorMetric label="Relative Strength (14)" value={currentSignal?.indicators.rsi?.toFixed(2) || '-'} status={(currentSignal?.indicators.rsi || 50) > 70 ? 'Overbought' : (currentSignal?.indicators.rsi || 50) < 30 ? 'Oversold' : 'Neutral'} />
-                        <IndicatorMetric label="MACD Histogram" value={currentSignal?.indicators.macd?.histogram.toFixed(4) || '-'} status={(currentSignal?.indicators.macd?.histogram || 0) > 0 ? 'Bullish' : 'Bearish'} />
-                        <IndicatorMetric label="Stochastic (14,3)" value={currentSignal?.indicators.stochastic?.k.toFixed(2) || '-'} status={(currentSignal?.indicators.stochastic?.k || 50) > 80 ? 'Overbought' : (currentSignal?.indicators.stochastic?.k || 50) < 20 ? 'Oversold' : 'Neutral'} />
+                        <IndicatorMetric label="Relative Strength (14)" value={currentSignal?.indicators?.rsi?.toFixed(2) || '-'} status={(currentSignal?.indicators?.rsi || 50) > 70 ? 'Overbought' : (currentSignal?.indicators?.rsi || 50) < 30 ? 'Oversold' : 'Neutral'} />
+                        <IndicatorMetric label="MACD Histogram" value={currentSignal?.indicators?.macd?.histogram?.toFixed(4) || '-'} status={(currentSignal?.indicators?.macd?.histogram || 0) > 0 ? 'Bullish' : 'Bearish'} />
+                        <IndicatorMetric label="Stochastic (14,3)" value={currentSignal?.indicators?.stochastic?.k?.toFixed(2) || '-'} status={(currentSignal?.indicators?.stochastic?.k || 50) > 80 ? 'Overbought' : (currentSignal?.indicators?.stochastic?.k || 50) < 20 ? 'Oversold' : 'Neutral'} />
                       </div>
                       
                       <div className="space-y-6">
                         <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-zinc-500 border-b border-white/10 pb-2">Volatility & Volume</h3>
-                        <IndicatorMetric label="Bollinger Bands" value={currentSignal?.indicators.bollinger ? `${((currentSignal.indicators.bollinger.upper - currentSignal.indicators.bollinger.lower) / currentSignal.indicators.bollinger.middle * 100).toFixed(2)}%` : '-'} status={currentSignal?.indicators.bollinger && currentSignal.price > currentSignal.indicators.bollinger.upper ? 'Above Upper' : currentSignal?.indicators.bollinger && currentSignal.price < currentSignal.indicators.bollinger.lower ? 'Below Lower' : 'Inside'} />
+                        <IndicatorMetric label="Bollinger Bands" value={currentSignal?.indicators?.bollinger ? `${((currentSignal.indicators.bollinger.upper - currentSignal.indicators.bollinger.lower) / currentSignal.indicators.bollinger.middle * 100).toFixed(2)}%` : '-'} status={currentSignal?.indicators?.bollinger && currentSignal.price > currentSignal.indicators.bollinger.upper ? 'Above Upper' : currentSignal?.indicators?.bollinger && currentSignal.price < currentSignal.indicators.bollinger.lower ? 'Below Lower' : 'Inside'} />
                         <div className="grid grid-cols-2 gap-6 pt-2">
-                          <IndicatorRow label="Volatility (ATR)" value={currentSignal?.indicators.atr?.toFixed(2) || '-'} trend="neutral" />
-                          <IndicatorRow label="Volume (OBV)" value={currentSignal?.indicators.obv ? (currentSignal.indicators.obv / 1000000).toFixed(2) + 'M' : '-'} trend={(currentSignal?.indicators.obv || 0) > 0 ? 'up' : 'down'} />
+                          <IndicatorRow label="Volatility (ATR)" value={currentSignal?.indicators?.atr?.toFixed(2) || '-'} trend="neutral" />
+                          <IndicatorRow label="Volume (OBV)" value={currentSignal?.indicators?.obv ? (currentSignal.indicators.obv / 1000000).toFixed(2) + 'M' : '-'} trend={(currentSignal?.indicators?.obv || 0) > 0 ? 'up' : 'down'} />
                         </div>
                         <div className="pt-4 space-y-3">
                           <span className="text-[8px] font-mono text-zinc-600 uppercase tracking-widest">Key Levels (Pivot)</span>

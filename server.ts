@@ -22,6 +22,9 @@ const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
 
 const BULK_WS_URL = "wss://exchange-ws1.bulk.trade";
+const ORIGIN_URL = "https://early.bulk.trade";
+const PRIVY_APP_ID = "cmbuls93q01jol20lf0ak0plb";
+const PRIVY_URL = "https://auth.privy.io/api/v1";
 const SERVER_KEY = "bulk_flow_server_auth_key_2026_03_31";
 
 // --- BOT STATE ---
@@ -54,10 +57,6 @@ botRouter.get("/status", (req: Request, res: Response) => {
 botRouter.post("/auth/init", async (req: Request, res: Response) => {
   const { address } = req.body;
   if (!address) return res.status(400).json({ error: "Address is required" });
-
-  const PRIVY_APP_ID = "cmbuls93q01jol20lf0ak0plb";
-  const PRIVY_URL = "https://auth.privy.io/api/v1";
-  const ORIGIN_URL = "https://early.bulk.trade";
 
   try {
     const r_init = await axios.post(`${PRIVY_URL}/siws/init`, { address }, {
@@ -186,9 +185,6 @@ class BulkClient {
   }
 
   async authenticate(address: string, message: string, signature: string) {
-    const PRIVY_APP_ID = "cmbuls93q01jol20lf0ak0plb";
-    const PRIVY_URL = "https://auth.privy.io/api/v1";
-    const ORIGIN_URL = "https://early.bulk.trade";
     const headers = { 
       "Origin": ORIGIN_URL, 
       "Referer": ORIGIN_URL + "/", 
@@ -219,7 +215,12 @@ class BulkClient {
 
   connect() {
     if (!this.token) return;
-    this.ws = new WebSocket(BULK_WS_URL, { headers: { "Authorization": `Bearer ${this.token}`, "Origin": "https://early.bulk.trade" } });
+    this.ws = new WebSocket(BULK_WS_URL, { 
+      headers: { 
+        "Authorization": `Bearer ${this.token}`, 
+        "Origin": ORIGIN_URL 
+      } 
+    });
     this.ws.on("open", () => {
       this.ws?.send(JSON.stringify({ method: "subscribe", id: 1, subscription: [{ type: "account", user: this.address }] }));
       addBotLog("Bot Session Connected.");

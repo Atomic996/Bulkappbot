@@ -89,12 +89,12 @@ export const TradingBot: React.FC = () => {
   }, [fetchStatus]);
 
   const startBotWithWallet = async () => {
-    if (!publicKey) {
-      setError("Please connect your wallet first");
+    if (!connected) {
+      setError("Please connect your wallet first using the button above.");
       return;
     }
     if (!signMessage) {
-      setError("Your wallet does not support message signing. Please try Phantom or Solflare.");
+      setError("Your wallet does not support message signing. Please use Phantom or Solflare.");
       return;
     }
     
@@ -102,43 +102,25 @@ export const TradingBot: React.FC = () => {
     setError(null);
     
     try {
-      console.log("Starting bot with address:", publicKey.toBase58());
-      
-      // 1. Get nonce and message from server
-      const siwsRes = await axios.post('/api/bot/auth/init', { address: publicKey.toBase58() });
-      
-      if (!siwsRes.data || !siwsRes.data.message) {
-        throw new Error("Server failed to generate SIWS message");
-      }
-      
+      // 1. Get SIWS message from server
+      const siwsRes = await axios.post('/api/bot/auth/init', { address: publicKey?.toBase58() });
       const { message } = siwsRes.data;
-      console.log("SIWS Message received, requesting signature...");
 
-      // 2. Sign message with wallet
+      // 2. Sign with real wallet (This is what famous apps do)
       const messageBytes = new TextEncoder().encode(message);
       const signatureBytes = await signMessage(messageBytes);
-      
-      // Privy SIWS expects base64 for Solana signatures
       const signatureBase64 = btoa(String.fromCharCode.apply(null, Array.from(signatureBytes)));
-      console.log("Signature obtained, authenticating on server...");
 
-      // 3. Authenticate and start bot on server
-      const authRes = await axios.post('/api/bot/auth/start', {
-        address: publicKey.toBase58(),
+      // 3. Start bot session on server
+      await axios.post('/api/bot/auth/start', {
+        address: publicKey?.toBase58(),
         message,
         signature: signatureBase64
       });
       
-      if (authRes.data.error) {
-        throw new Error(authRes.data.error);
-      } else {
-        console.log("Bot started successfully!");
-        fetchStatus();
-      }
+      fetchStatus();
     } catch (err: any) {
-      console.error("Bot start failed:", err);
-      const msg = err.response?.data?.error || err.message || "Failed to start bot with wallet";
-      setError(msg);
+      setError(err.response?.data?.error || err.message || "Authorization failed");
     } finally {
       setIsLoading(false);
     }
@@ -248,21 +230,27 @@ export const TradingBot: React.FC = () => {
       )}
 
       {connected && !status.enabled && !isLoading && (
-        <div className="p-8 bg-blue-500/5 border border-blue-500/20 rounded-sm flex flex-col items-center gap-4">
-          <div className="flex items-center gap-3">
-            <ShieldCheck size={20} className="text-blue-500" />
-            <span className="text-xs font-black text-white uppercase tracking-widest">Step 2: Authorize Bot Session</span>
+        <motion.div 
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="p-6 bg-blue-500/10 border border-blue-500/30 rounded-sm flex flex-col items-center gap-4 text-center"
+        >
+          <div className="w-12 h-12 bg-blue-500/20 rounded-full flex items-center justify-center">
+            <ShieldCheck size={24} className="text-blue-400" />
           </div>
-          <p className="text-[10px] text-zinc-500 font-mono text-center max-w-sm">
-            Wallet connected. Now you need to sign a one-time message to authorize the bot to trade on your behalf.
-          </p>
+          <div className="flex flex-col gap-1">
+            <h3 className="text-sm font-black uppercase tracking-widest text-white">Authorize Trading Session</h3>
+            <p className="text-[10px] text-zinc-400 font-mono max-w-xs">
+              Your wallet is connected. Click below to sign a secure authorization message and start the autonomous bot.
+            </p>
+          </div>
           <button 
             onClick={startBotWithWallet}
-            className="px-6 py-2 bg-blue-500 text-white text-[10px] font-black uppercase tracking-widest rounded-sm hover:bg-blue-600 transition-all"
+            className="px-10 py-3 bg-blue-500 text-white text-xs font-black uppercase tracking-[0.2em] rounded-sm hover:bg-blue-600 transition-all shadow-lg shadow-blue-500/20"
           >
-            Sign & Authorize
+            Sign & Start Bot
           </button>
-        </div>
+        </motion.div>
       )}
 
       {(connected || status.enabled) && (

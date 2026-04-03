@@ -10,6 +10,13 @@ import './index.css';
 window.Buffer = Buffer;
 window.process = process;
 
+// Ignore wallet conflict errors from Mises browser
+window.addEventListener('error', (e) => {
+  if (e.message?.includes('Cannot redefine property')) {
+    e.preventDefault();
+  }
+});
+
 interface ErrorBoundaryProps {
   children: React.ReactNode;
 }

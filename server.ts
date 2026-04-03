@@ -78,7 +78,9 @@ botRouter.post("/auth/init", async (req: Request, res: Response) => {
         "Origin": ORIGIN_URL,
         "Referer": ORIGIN_URL + "/",
         "Privy-App-Id": PRIVY_APP_ID,
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*"
       },
       timeout: 10000
     });
@@ -108,10 +110,12 @@ botRouter.post("/auth/init", async (req: Request, res: Response) => {
     console.log(`[Auth] Message generated for ${address}`);
     res.json({ nonce, message });
   } catch (err: any) {
-    console.error("[Auth] SIWS Init Error:", err.response?.data || err.message);
+    const errorData = err.response?.data;
+    console.error("[Auth] SIWS Init Error:", errorData || err.message);
     res.status(500).json({ 
-      error: "Failed to initialize authentication session", 
-      details: err.response?.data || err.message 
+      error: "SIWS Initialization Failed", 
+      message: err.message,
+      details: errorData 
     });
   }
 });
@@ -167,7 +171,9 @@ app.get("/api/news", async (req: Request, res: Response) => {
   }
 
   const newsDataApiKey = process.env.NEWSDATA_API_KEY;
-  if (!newsDataApiKey) return res.status(500).json({ error: "News service configuration error" });
+  if (!newsDataApiKey || newsDataApiKey === "") {
+    return res.status(500).json({ error: "NEWSDATA_API_KEY is missing in environment variables" });
+  }
 
   try {
     const response = await axios.get('https://newsdata.io/api/1/news', {
@@ -216,7 +222,9 @@ class BulkClient {
       "Origin": ORIGIN_URL, 
       "Referer": ORIGIN_URL + "/", 
       "Privy-App-Id": PRIVY_APP_ID, 
-      "Content-Type": "application/json" 
+      "Content-Type": "application/json",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Accept": "application/json, text/plain, */*"
     };
 
     try {

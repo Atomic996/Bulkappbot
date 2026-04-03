@@ -135,6 +135,13 @@ export async function getChatResponse(
     fearGreedIndex?: number;
   }
 ): Promise<string> {
+  let indicatorsStr = "";
+  try {
+    indicatorsStr = JSON.stringify(context.indicators);
+  } catch (e) {
+    indicatorsStr = "[Complex Indicators Object]";
+  }
+
   const prompt = `
     You are an expert Crypto Trading Advisor using the "Crypto Fusion Strategy v3".
     
@@ -142,7 +149,7 @@ export async function getChatResponse(
     - Price: $${context.price}
     - Technical Score: ${context.technicalScore}/100
     - News Sentiment Score: ${context.newsScore}%
-    - Indicators: ${JSON.stringify(context.indicators)}
+    - Indicators: ${indicatorsStr}
     - Recent News: ${context.news.slice(0, 5).map(n => n.title).join(' | ')}
     - Whale Activity: ${context.whaleActivity || 'N/A'}
     - Fear & Greed Index: ${context.fearGreedIndex || 'N/A'}

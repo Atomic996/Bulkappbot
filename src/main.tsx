@@ -15,13 +15,9 @@ window.onerror = function(message, source, lineno, colno, error) {
   if (error instanceof Error) {
     errorMsg = error.message;
   } else if (typeof error === 'object' && error !== null) {
-    try {
-      errorMsg = JSON.stringify(error);
-    } catch (e) {
-      errorMsg = "[Complex Error Object]";
-    }
+    errorMsg = "[Complex Error Object: " + (error.constructor ? error.constructor.name : "Unknown") + "]";
   }
-  console.error("Global Error Caught:", errorMsg, source, lineno, colno);
+  console.error("Global Error Caught:", String(errorMsg), source, lineno, colno);
   return false;
 };
 
@@ -30,14 +26,9 @@ window.onunhandledrejection = function(event) {
   if (reason instanceof Error) {
     reason = reason.message;
   } else if (typeof reason === 'object' && reason !== null) {
-    try {
-      // Try to get a safe string representation
-      reason = JSON.stringify(reason);
-    } catch (e) {
-      reason = "[Complex Rejection Reason]";
-    }
+    reason = "[Complex Rejection Reason: " + (reason.constructor ? reason.constructor.name : "Unknown") + "]";
   }
-  console.error("Unhandled Promise Rejection:", reason);
+  console.error("Unhandled Promise Rejection:", String(reason));
 };
 
 createRoot(document.getElementById('root')!).render(

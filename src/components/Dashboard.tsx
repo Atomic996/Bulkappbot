@@ -132,7 +132,7 @@ export const Dashboard: React.FC = () => {
           analyzeNews(rawNews).then(analyzedNews => {
             setNews(prev => ({ ...prev, [symbol]: analyzedNews }));
           }).catch(err => {
-            console.error("Gemini analysis failed:", err?.message || err);
+            console.error("Gemini analysis failed:", err?.message || String(err));
           });
         }
       }
@@ -142,7 +142,7 @@ export const Dashboard: React.FC = () => {
       }
 
     } catch (error) {
-      console.error(`Error updating data for ${symbol}:`, error instanceof Error ? error.message : error);
+      console.error(`Error updating data for ${symbol}:`, error instanceof Error ? error.message : String(error));
     }
   }, [addAlert]);
 

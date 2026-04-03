@@ -59,7 +59,7 @@ export const ChatAdvisor: React.FC<ChatAdvisorProps> = ({ signal, news }) => {
       const botMsg: Message = { id: (Date.now() + 1).toString(), text: response, sender: 'bot' };
       setMessages(prev => [...prev, botMsg]);
     } catch (error) {
-      console.error("Chat error:", error instanceof Error ? error.message : error);
+      console.error("Chat error:", error instanceof Error ? error.message : String(error));
     } finally {
       setIsTyping(false);
     }

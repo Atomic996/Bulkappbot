@@ -41,7 +41,7 @@ export const WalletView: React.FC<WalletViewProps> = ({ onBack }) => {
       const bal = await connection.getBalance(publicKey);
       setBalance(bal / LAMPORTS_PER_SOL);
     } catch (err) {
-      console.error("Failed to fetch balance:", err instanceof Error ? err.message : err);
+      console.error("Failed to fetch balance:", err instanceof Error ? err.message : String(err));
     } finally {
       setIsLoading(false);
     }

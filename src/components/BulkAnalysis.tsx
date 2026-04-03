@@ -165,7 +165,7 @@ export const BulkAnalysis: React.FC = () => {
       const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
     } catch (error) {
-      console.error("Sign in error:", error);
+      console.error("Sign in error:", error instanceof Error ? error.message : String(error));
     }
   };
 

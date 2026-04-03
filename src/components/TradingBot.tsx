@@ -88,6 +88,17 @@ export const TradingBot: React.FC = () => {
     return () => clearInterval(interval);
   }, [fetchStatus]);
 
+  const resetSession = () => {
+    disconnect();
+    setStatus(prev => ({ ...prev, enabled: false, status: "Reset" }));
+    setError(null);
+    setIsLoading(false);
+    // Clear any local storage that might cause auto-connect issues
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('walletName');
+    }
+  };
+
   const startBotWithWallet = async () => {
     if (!connected) {
       setError("Please connect your wallet first using the button above.");
@@ -202,13 +213,23 @@ export const TradingBot: React.FC = () => {
 
       {error && (
         <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-sm flex flex-col gap-2">
-          <div className="flex items-center gap-3">
-            <AlertCircle size={16} className="text-rose-500" />
-            <p className="text-xs font-bold text-rose-200 uppercase tracking-widest">{error}</p>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <AlertCircle size={16} className="text-rose-500" />
+              <p className="text-xs font-bold text-rose-200 uppercase tracking-widest">
+                {typeof error === 'string' ? error : 'An unexpected error occurred'}
+              </p>
+            </div>
+            <button 
+              onClick={resetSession}
+              className="text-[8px] font-black uppercase tracking-widest text-rose-500 hover:text-rose-400 underline"
+            >
+              Reset Session
+            </button>
           </div>
-          {error.includes('405') && (
+          {error.toString().includes('500') && (
             <p className="text-[10px] text-rose-400 font-mono italic">
-              Note: 405 error usually means the API route is not correctly configured on the server.
+              Server Error (500): The backend is failing to initialize the session. Check server logs.
             </p>
           )}
         </div>

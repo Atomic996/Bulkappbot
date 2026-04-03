@@ -16,10 +16,21 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // --- CONFIGURATION ---
-const configPath = path.join(process.cwd(), "firebase-applet-config.json");
-const firebaseConfig = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-const firebaseApp = initializeApp(firebaseConfig);
-const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
+let firebaseApp;
+let db: any;
+
+try {
+  const configPath = path.join(process.cwd(), "firebase-applet-config.json");
+  if (fs.existsSync(configPath)) {
+    const firebaseConfig = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+    firebaseApp = initializeApp(firebaseConfig);
+    db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
+  } else {
+    console.warn("firebase-applet-config.json not found. Firestore features will be disabled.");
+  }
+} catch (err) {
+  console.error("Failed to initialize Firebase:", err);
+}
 
 const BULK_WS_URL = "wss://exchange-ws1.bulk.trade";
 const ORIGIN_URL = "https://early.bulk.trade";
@@ -59,18 +70,19 @@ botRouter.post("/auth/init", async (req: Request, res: Response) => {
   if (!address) return res.status(400).json({ error: "Address is required" });
 
   try {
+    console.log(`Initializing SIWS for address: ${address}`);
     const r_init = await axios.post(`${PRIVY_URL}/siws/init`, { address }, {
       headers: {
         "Origin": ORIGIN_URL,
         "Privy-App-Id": PRIVY_APP_ID,
         "Content-Type": "application/json"
-      }
+      },
+      timeout: 10000
     });
     
     const nonce = r_init.data.nonce;
     const ts = new Date().toISOString();
     
-    // Generate a temporary session key for this specific address
     const sessionKeyPair = nacl.sign.keyPair();
     const sessionPubKey = bs58.encode(sessionKeyPair.publicKey);
 
@@ -79,13 +91,14 @@ botRouter.post("/auth/init", async (req: Request, res: Response) => {
                     `URI: https://early.bulk.trade\n` +
                     `Version: 1\nChain ID: mainnet\nNonce: ${nonce}\nIssued At: ${ts}\nResources:\n- https://privy.io`;
 
-    // Store pending session
     pendingSessions.set(address, { sessionKeyPair, message });
-    
     res.json({ nonce, message });
-  } catch (err) {
-    console.error("SIWS Init Error:", err);
-    res.status(500).json({ error: "Failed to init auth" });
+  } catch (err: any) {
+    console.error("SIWS Init Error Details:", err.response?.data || err.message);
+    res.status(500).json({ 
+      error: "Failed to init auth", 
+      details: err.response?.data || err.message 
+    });
   }
 });
 

@@ -76,12 +76,23 @@ window.onerror = function(message, source, lineno, colno, error) {
 
 window.onunhandledrejection = function(event) {
   let reason = event.reason;
+  let errorMsg = "Unknown reason";
+  
   if (reason instanceof Error) {
-    reason = reason.message;
+    errorMsg = reason.message;
+  } else if (typeof reason === 'string' && reason.trim() !== "") {
+    errorMsg = reason;
   } else if (typeof reason === 'object' && reason !== null) {
-    reason = "[Complex Rejection Reason: " + (reason.constructor ? reason.constructor.name : "Unknown") + "]";
+    try {
+      errorMsg = "[Complex Rejection Reason: " + (reason.constructor ? reason.constructor.name : "Object") + "]";
+    } catch (e) {
+      errorMsg = "[Complex Rejection Reason]";
+    }
+  } else if (reason !== undefined && reason !== null) {
+    errorMsg = String(reason);
   }
-  console.error("Unhandled Promise Rejection:", String(reason));
+  
+  console.error("Unhandled Promise Rejection:", errorMsg);
 };
 
 createRoot(document.getElementById('root')!).render(

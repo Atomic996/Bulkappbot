@@ -109,7 +109,7 @@ export async function analyzeNews(newsItems: NewsItem[]): Promise<NewsItem[]> {
       return item;
     });
   } catch (error) {
-    console.error("Error analyzing news with Gemini:", error);
+    console.error("Error analyzing news with Gemini:", error instanceof Error ? error.message : String(error));
     return newsItems;
   }
 }
@@ -174,7 +174,7 @@ export async function getChatResponse(
 
     return response.text || "عذراً، لم أتمكن من تحليل البيانات حالياً.";
   } catch (error) {
-    console.error("Error getting chat response:", error);
+    console.error("Error getting chat response:", error instanceof Error ? error.message : String(error));
     return "حدث خطأ أثناء محاولة الاتصال بمحرك الذكاء الاصطناعي.";
   }
 }

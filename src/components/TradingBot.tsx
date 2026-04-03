@@ -69,7 +69,7 @@ export const TradingBot: React.FC = () => {
           console.error("Failed to fetch bot status (Axios):", err.message);
         }
       } else {
-        console.error("Failed to fetch bot status:", err?.message || err);
+        console.error("Failed to fetch bot status:", err?.message || String(err));
       }
       // Don't set error state for periodic background fetches to avoid flickering UI
     }
@@ -120,7 +120,7 @@ export const TradingBot: React.FC = () => {
         fetchStatus();
       }
     } catch (err: any) {
-      console.error("Bot start failed:", err?.message || err);
+      console.error("Bot start failed:", err?.message || String(err));
       const msg = err.response?.data?.error || err.message || "Failed to start bot with wallet";
       setError(msg);
     } finally {

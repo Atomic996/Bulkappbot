@@ -58,7 +58,13 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
     operationType,
     path
   };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  let errStr = "";
+  try {
+    errStr = JSON.stringify(errInfo);
+  } catch (e) {
+    errStr = String(errInfo);
+  }
+  console.error('Firestore Error: ', errStr);
 }
 
 function cn(...inputs: ClassValue[]) {

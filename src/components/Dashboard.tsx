@@ -157,19 +157,19 @@ export const Dashboard: React.FC = () => {
       // 2. Load the rest in background
       const otherSymbols = SYMBOLS.filter(s => s !== selectedSymbol);
       await Promise.all(otherSymbols.map(s => updateAssetData(s, timeframe).catch(err => {
-        console.error(`Background update failed for ${s}:`, err);
+        console.error(`Background update failed for ${s}:`, err instanceof Error ? err.message : String(err));
       })));
     } catch (error) {
-      console.error("Error in refreshAll:", error);
+      console.error("Error in refreshAll:", error instanceof Error ? error.message : String(error));
     } finally {
       setIsRefreshing(false);
     }
   }, [updateAssetData, selectedSymbol, timeframe]);
 
   useEffect(() => {
-    refreshAll().catch(err => console.error("Initial refresh failed:", err));
+    refreshAll().catch(err => console.error("Initial refresh failed:", err instanceof Error ? err.message : String(err)));
     const interval = setInterval(() => {
-      refreshAll().catch(err => console.error("Interval refresh failed:", err));
+      refreshAll().catch(err => console.error("Interval refresh failed:", err instanceof Error ? err.message : String(err)));
     }, 120000); // 2 mins refresh
     return () => clearInterval(interval);
   }, [refreshAll]);
@@ -263,7 +263,7 @@ export const Dashboard: React.FC = () => {
           }
         }
       } catch (e) {
-        console.error("Error parsing WebSocket message:", e);
+        console.error("Error parsing WebSocket message:", e instanceof Error ? e.message : String(e));
       }
     };
 

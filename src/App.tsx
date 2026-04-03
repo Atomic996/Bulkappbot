@@ -11,8 +11,7 @@ import {
   SolflareWalletAdapter,
   TrustWalletAdapter,
   CoinbaseWalletAdapter,
-  TorusWalletAdapter,
-  WalletConnectWalletAdapter
+  TorusWalletAdapter
 } from '@solana/wallet-adapter-wallets';
 import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
 import { clusterApiUrl } from '@solana/web3.js';
@@ -35,19 +34,6 @@ export default function App() {
       new TrustWalletAdapter(),
       new CoinbaseWalletAdapter(),
       new TorusWalletAdapter(),
-      new WalletConnectWalletAdapter({
-        network,
-        options: {
-          relayUrl: 'wss://relay.walletconnect.com',
-          // Note: In a real app, you'd provide a projectId from WalletConnect Cloud
-          metadata: {
-            name: 'Sentinel.AI',
-            description: 'AI Trading Bot',
-            url: 'https://ais-dev-lxwviuv2huhmgeln4laacz-206140913494.europe-west1.run.app',
-            icons: ['https://picsum.photos/seed/sentinel/200/200'],
-          },
-        },
-      }),
     ],
     [network]
   );

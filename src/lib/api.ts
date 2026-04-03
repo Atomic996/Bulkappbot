@@ -85,7 +85,7 @@ export async function fetchHistoricalData(symbol: string, timeframe: Timeframe =
       return [];
     });
   } catch (error) {
-    console.error(`Error fetching historical data for ${symbol}:`, error);
+    console.error(`Error fetching historical data for ${symbol}:`, error instanceof Error ? error.message : String(error));
     return [];
   }
 }
@@ -102,7 +102,7 @@ export async function fetchNews(symbol: string): Promise<NewsItem[]> {
 
     return [];
   } catch (error) {
-    console.error(`Error fetching news for ${symbol}:`, error);
+    console.error(`Error fetching news for ${symbol}:`, error instanceof Error ? error.message : String(error));
     throw error;
   }
 }

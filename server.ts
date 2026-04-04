@@ -38,6 +38,7 @@ app.use(express.json());
 const botRouter = express.Router();
 
 botRouter.get("/status", (req: Request, res: Response) => {
+  console.log(`[API] Status requested. Balance: $${botBalance}, Session: ${!!bulkClient}`);
   res.json({
     enabled: botEnabled,
     status: botStatus,
@@ -271,18 +272,39 @@ class BulkClient {
       } 
     });
     this.ws.on("open", () => {
+      console.log(`[BulkWS] Session Connected for ${this.address}`);
       this.ws?.send(JSON.stringify({ method: "subscribe", id: 1, subscription: [{ type: "account", user: this.address }] }));
       addBotLog("Bot Session Connected.");
     });
     this.ws.on("message", (data) => {
       try {
         const msg = JSON.parse(data.toString());
-        if (msg.type === "account" && msg.data?.type === "accountSnapshot") {
-          botBalance = parseFloat(msg.data.margin?.availableBalance || "0");
-          botPositions = msg.data.positions || [];
-          broadcast({ type: "bot_update", data: { balance: botBalance, positions: botPositions } });
+        if (msg.type === "account") {
+          console.log(`[BulkWS] Account Update Received: ${msg.data?.type}`);
+          if (msg.data?.type === "accountSnapshot" || msg.data?.type === "accountUpdate") {
+            const margin = msg.data.margin || {};
+            const newBalance = parseFloat(margin.availableBalance || margin.totalMarginBalance || margin.withdrawableBalance || "0");
+            
+            if (!isNaN(newBalance)) {
+              botBalance = newBalance;
+              console.log(`[BulkWS] Balance Updated: $${botBalance}`);
+            } else {
+              console.warn(`[BulkWS] Received invalid balance:`, margin);
+            }
+            
+            if (msg.data.positions) {
+              botPositions = msg.data.positions;
+            }
+            
+            broadcast({ type: "bot_update", data: { balance: botBalance, positions: botPositions } });
+          }
+        } else if (msg.type === "error") {
+          console.error(`[BulkWS] Error:`, msg.message);
+          addBotLog(`❌ Exchange Error: ${msg.message}`);
         }
-      } catch (e) {}
+      } catch (e) {
+        console.error("[BulkWS] Message Parse Error:", e);
+      }
     });
     this.ws.on("close", () => { if (botEnabled) setTimeout(() => this.connect(), 5000); });
   }
@@ -384,6 +406,18 @@ wss.on("connection", (ws) => {
   clients.add(ws);
   const topWallets = Object.values(walletsLocal).sort((a, b) => Math.abs(b.totalPnL) - Math.abs(a.totalPnL)).slice(0, 50);
   ws.send(JSON.stringify({ type: "init_wallets", data: topWallets }));
+  
+  // Send current bot status to the new client
+  ws.send(JSON.stringify({ 
+    type: "bot_update", 
+    data: { 
+      balance: botBalance, 
+      positions: botPositions,
+      enabled: botEnabled,
+      status: botStatus
+    } 
+  }));
+
   ws.on("close", () => clients.delete(ws));
 });
 

@@ -34,7 +34,7 @@ interface BotStatus {
   address: string | null;
 }
 
-const BACKEND_URL = "https://bulkappbot-production.up.railway.app";
+const BACKEND_URL = typeof window !== 'undefined' ? window.location.origin : "";
 
 export const TradingBot: React.FC = () => {
   const { publicKey, signMessage, connected, disconnect } = useWallet();
@@ -53,8 +53,11 @@ export const TradingBot: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const wsUrl = BACKEND_URL.replace('https://', 'wss://') + '/ws/bulk';
+    const wsUrl = (BACKEND_URL || window.location.origin).replace('http', 'ws') + '/ws/bulk';
     const ws = new WebSocket(wsUrl);
+    
+    ws.onopen = () => console.log("[WS] Connected to backend");
+    ws.onerror = (err) => console.error("[WS] Connection error:", err);
     
     ws.onmessage = (event) => {
       try {

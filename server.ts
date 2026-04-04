@@ -78,7 +78,7 @@ botRouter.post("/auth/init", async (req: Request, res: Response) => {
         "Referer": ORIGIN_URL + "/",
         "Privy-App-Id": PRIVY_APP_ID,
         "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         "Accept": "application/json, text/plain, */*"
       },
       timeout: 10000
@@ -91,11 +91,10 @@ botRouter.post("/auth/init", async (req: Request, res: Response) => {
     const sessionKeyPair = nacl.sign.keyPair();
     const sessionPubKey = bs58.encode(sessionKeyPair.publicKey);
 
-    // 3. Build the SIWS message (Matching user's clean format + session key)
+    // 3. Build the SIWS message (Exact format required by Privy)
     const message = `early.bulk.trade wants you to sign in with your Solana account:\n` +
                     `${address}\n\n` +
                     `You are proving you own ${address}.\n\n` +
-                    `Authorize bot session key: ${sessionPubKey}\n\n` +
                     `URI: https://early.bulk.trade\n` +
                     `Version: 1\n` +
                     `Chain ID: mainnet\n` +
@@ -222,9 +221,15 @@ class BulkClient {
       "Referer": ORIGIN_URL + "/", 
       "Privy-App-Id": PRIVY_APP_ID, 
       "Content-Type": "application/json",
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
       "Accept": "application/json, text/plain, */*"
     };
+
+    console.log("[Auth] Authenticating with Privy:", {
+      address,
+      message_preview: message.slice(0, 50) + "...",
+      signature_preview: signature.slice(0, 20) + "..."
+    });
 
     try {
       const r_auth = await axios.post(`${PRIVY_URL}/siws/authenticate`, {
@@ -236,13 +241,20 @@ class BulkClient {
         walletClientType: "Phantom"
       }, { headers });
 
+      console.log("[Auth] Privy Response Success:", r_auth.data.token ? "Token Received" : "No Token");
+
       this.token = r_auth.data.token;
       this.address = address;
       botAddress = address;
       addBotLog(`Authenticated ${address.slice(0, 6)}...`);
       return true;
-    } catch (err) {
-      console.error("Bulk Auth Error:", err);
+    } catch (err: any) {
+      const errorData = err.response?.data;
+      console.error("Bulk Auth Error:", {
+        status: err.response?.status,
+        data: errorData,
+        message: err.message
+      });
       return false;
     }
   }

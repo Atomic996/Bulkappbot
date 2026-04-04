@@ -1,5 +1,4 @@
 import express, { Request, Response } from "express";
-import { createServer as createViteServer } from "vite";
 import WebSocket, { WebSocketServer } from "ws";
 import { initializeApp } from "firebase/app";
 import { getFirestore, collection, doc, setDoc, addDoc } from "firebase/firestore";
@@ -468,6 +467,7 @@ setInterval(runAutoTrader, 60000);
 // --- SERVER START ---
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
     app.use(vite.middlewares);
   } else {

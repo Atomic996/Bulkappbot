@@ -14,6 +14,7 @@ window.process = process;
 window.addEventListener('error', (e) => {
   if (e.message?.includes('Cannot redefine property')) {
     e.preventDefault();
+    return true;
   }
 });
 

@@ -94,6 +94,9 @@ interface WalletState {
   lastUpdate: number;
 }
 
+const BACKEND_URL = "https://bulkappbot-production.up.railway.app";
+const BACKEND_WS_URL = "wss://bulkappbot-production.up.railway.app";
+
 export const BulkAnalysis: React.FC = () => {
   const [trades, setTrades] = useState<BulkTrade[]>([]);
   const [wallets, setWallets] = useState<Record<string, WalletState>>({});
@@ -106,8 +109,7 @@ export const BulkAnalysis: React.FC = () => {
 
   // 1. Internal WebSocket for Real-time Updates (Bypasses Firestore)
   useEffect(() => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws/bulk`;
+    const wsUrl = `${BACKEND_WS_URL}/ws/bulk`;
     let socket: WebSocket;
 
     function connect() {

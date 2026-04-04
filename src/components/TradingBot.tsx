@@ -34,6 +34,8 @@ interface BotStatus {
   address: string | null;
 }
 
+const BACKEND_URL = "https://bulkappbot-production.up.railway.app";
+
 export const TradingBot: React.FC = () => {
   const { publicKey, signMessage, connected, wallet, disconnect } = useWallet();
   const [status, setStatus] = useState<BotStatus>({
@@ -58,7 +60,7 @@ export const TradingBot: React.FC = () => {
         }
       }
 
-      const res = await axios.get('/api/bot/status');
+      const res = await axios.get(`${BACKEND_URL}/api/bot/status`);
       if (res.data && typeof res.data === 'object') {
         setStatus(prev => ({
           ...prev,
@@ -114,7 +116,7 @@ export const TradingBot: React.FC = () => {
     
     try {
       // 1. Get SIWS message from server (Proxying Privy to avoid CORS/Origin issues)
-      const siwsRes = await axios.post('/api/bot/auth/init', { address: publicKey?.toBase58() });
+      const siwsRes = await axios.post(`${BACKEND_URL}/api/bot/auth/init`, { address: publicKey?.toBase58() });
       const { message } = siwsRes.data;
 
       // 2. Sign the message with the real wallet (Matching user's clean logic)
@@ -125,7 +127,7 @@ export const TradingBot: React.FC = () => {
       const signatureBase64 = btoa(String.fromCharCode.apply(null, Array.from(signed)));
 
       // 3. Send signature back to server to start the bot
-      await axios.post('/api/bot/auth/start', {
+      await axios.post(`${BACKEND_URL}/api/bot/auth/start`, {
         address: publicKey?.toBase58(),
         message,
         signature: signatureBase64
@@ -144,7 +146,7 @@ export const TradingBot: React.FC = () => {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await axios.post('/api/bot/toggle');
+      const res = await axios.post(`${BACKEND_URL}/api/bot/toggle`);
       if (res.data.error) {
         setError(res.data.error);
       } else {

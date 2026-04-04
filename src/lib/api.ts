@@ -90,9 +90,11 @@ export async function fetchHistoricalData(symbol: string, timeframe: Timeframe =
   }
 }
 
+const BACKEND_URL = "https://bulkappbot-production.up.railway.app";
+
 export async function fetchNews(symbol: string): Promise<NewsItem[]> {
   try {
-    const response = await axios.get('/api/news', {
+    const response = await axios.get(`${BACKEND_URL}/api/news`, {
       params: { symbol },
     });
 

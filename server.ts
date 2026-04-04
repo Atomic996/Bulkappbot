@@ -1,4 +1,5 @@
 import express, { Request, Response } from "express";
+import cors from "cors";
 import WebSocket, { WebSocketServer } from "ws";
 import { initializeApp } from "firebase/app";
 import { getFirestore, collection, doc, setDoc, addDoc } from "firebase/firestore";
@@ -32,7 +33,7 @@ try {
 }
 
 const BULK_WS_URL = "wss://exchange-ws1.bulk.trade";
-const ORIGIN_URL = "https://bulkappbot-production.up.railway.app";
+const ORIGIN_URL = "https://bulkappbot.vercel.app";
 const PRIVY_APP_ID = "cmbuls93q01jol20lf0ak0plb";
 const PRIVY_URL = "https://auth.privy.io/api/v1";
 const SERVER_KEY = "bulk_flow_server_auth_key_2026_03_31";
@@ -46,6 +47,7 @@ let botPositions: any[] = [];
 let botLogs: string[] = [];
 
 const app = express();
+app.use(cors());
 app.use(express.json());
 
 // --- BOT API ROUTES ---
@@ -93,9 +95,9 @@ botRouter.post("/auth/init", async (req: Request, res: Response) => {
 
     // 3. Build the SIWS message (Exact format required by Privy)
     const message = 
-      `early.bulk.trade wants you to sign in with your Solana account:\n${address}\n\n` +
+      `${new URL(ORIGIN_URL).hostname} wants you to sign in with your Solana account:\n${address}\n\n` +
       `You are proving you own ${address}.\n\n` +
-      `URI: https://early.bulk.trade\n` +
+      `URI: ${ORIGIN_URL}\n` +
       `Version: 1\n` +
       `Chain ID: mainnet\n` +
       `Nonce: ${nonce}\n` +
@@ -513,7 +515,7 @@ async function startServer() {
     app.get("*", (req, res) => res.sendFile(path.join(distPath, "index.html")));
   }
 
-  const PORT = process.env.PORT || 3000;
+  const PORT = Number(process.env.PORT) || 3000;
   const server = app.listen(PORT, "0.0.0.0", () => console.log(`Server running on port ${PORT}`));
   server.on("upgrade", (request, socket, head) => {
     if (request.url === "/ws/bulk") wss.handleUpgrade(request, socket, head, (ws) => wss.emit("connection", ws, request));

@@ -1,8 +1,6 @@
 import express, { Request, Response } from "express";
 import cors from "cors";
 import WebSocket, { WebSocketServer } from "ws";
-import { initializeApp } from "firebase/app";
-import { getFirestore, collection, doc, setDoc, addDoc } from "firebase/firestore";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
@@ -15,23 +13,6 @@ import { fetchHistoricalData } from "./src/lib/api.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-// --- CONFIGURATION ---
-let firebaseApp;
-let db: any;
-
-try {
-  const configPath = path.join(process.cwd(), "firebase-applet-config.json");
-  if (fs.existsSync(configPath)) {
-    const firebaseConfig = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-    firebaseApp = initializeApp(firebaseConfig);
-    db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
-  } else {
-    console.warn("firebase-applet-config.json not found. Firestore features will be disabled.");
-  }
-} catch (err) {
-  console.error("Failed to initialize Firebase:", err);
-}
 
 const BULK_WS_URL = "wss://exchange-ws1.bulk.trade";
 const ORIGIN_URL = "https://bulkappbot.vercel.app";
@@ -46,6 +27,8 @@ let botBalance = 0;
 let botAddress: string | null = null;
 let botPositions: any[] = [];
 let botLogs: string[] = [];
+
+const pendingSessions = new Map<string, { message: string, sessionPrivKey: string, timestamp: number }>();
 
 const app = express();
 app.use(cors());
@@ -107,14 +90,12 @@ botRouter.post("/auth/init", async (req: Request, res: Response) => {
       `Issued At: ${ts}\n` +
       `Resources:\n- https://privy.io`;
 
-    // 4. Store session data in Firestore (Stateless fix for Vercel)
-    if (db) {
-      await setDoc(doc(db, "pending_sessions", address), {
-        message,
-        sessionPrivKey,
-        timestamp: Date.now()
-      });
-    }
+    // 4. Store session data in memory (Railway is persistent)
+    pendingSessions.set(address, {
+      message,
+      sessionPrivKey,
+      timestamp: Date.now()
+    });
     
     console.log(`[Auth] Message generated and stored for ${address}`);
     res.json({ nonce, message });
@@ -132,19 +113,8 @@ botRouter.post("/auth/init", async (req: Request, res: Response) => {
 botRouter.post("/auth/start", async (req: Request, res: Response) => {
   const { address, message, signature } = req.body;
   
-  // 1. Retrieve session from Firestore
-  let sessionData: any = null;
-  if (db) {
-    const sessionDoc = await axios.get(`${process.env.FIREBASE_URL || ''}/pending_sessions/${address}`).catch(() => null);
-    // Note: Using direct db access if available
-    try {
-      const { getDoc } = await import("firebase/firestore");
-      const snap = await getDoc(doc(db, "pending_sessions", address));
-      if (snap.exists()) sessionData = snap.data();
-    } catch (e) {
-      console.error("Firestore retrieval error:", e);
-    }
-  }
+  // 1. Retrieve session from memory
+  const sessionData = pendingSessions.get(address);
 
   if (!sessionData || sessionData.message !== message) {
     return res.status(400).json({ error: "Invalid or expired session request. Please refresh and try again." });
@@ -160,10 +130,7 @@ botRouter.post("/auth/start", async (req: Request, res: Response) => {
   
   if (ok) {
     // Cleanup
-    try {
-      const { deleteDoc } = await import("firebase/firestore");
-      await deleteDoc(doc(db, "pending_sessions", address));
-    } catch (e) {}
+    pendingSessions.delete(address);
 
     bulkClient.connect();
     botEnabled = true;
@@ -444,10 +411,6 @@ function connectBulkWS() {
         const tradeData = { symbol, price, size, side, walletId, timestamp, serverKey: SERVER_KEY };
         broadcast({ type: "trade", data: tradeData });
 
-        if (price * size >= 50000) {
-          try { await addDoc(collection(db, "trades"), tradeData); } catch (err) {}
-        }
-
         if (!walletsLocal[walletId]) {
           walletsLocal[walletId] = { id: walletId, position: 'flat', entryPrice: null, entrySize: 0, totalPnL: 0, winCount: 0, tradeCount: 0, lastUpdate: timestamp };
         }
@@ -466,17 +429,6 @@ function connectBulkWS() {
         const top = Object.values(walletsLocal).sort((a, b) => Math.abs(b.totalPnL) - Math.abs(a.totalPnL)).slice(0, 50);
         broadcast({ type: "wallets_update", data: top, stats: { activeWallets: Object.values(walletsLocal).filter(w => w.position !== 'flat').length, totalWallets: Object.keys(walletsLocal).length } });
       }
-        if (now - lastWalletSync > 60000) {
-          lastWalletSync = now;
-          const topToSync = Object.values(walletsLocal).sort((a, b) => Math.abs(b.totalPnL) - Math.abs(a.totalPnL)).slice(0, 50);
-          for (const w of topToSync) { 
-            try { 
-              await setDoc(doc(db, "wallets", w.id), { ...w, serverKey: SERVER_KEY }); 
-            } catch (err) {
-              console.error(`Failed to sync wallet ${w.id}:`, err);
-            } 
-          }
-        }
     } catch (e) {}
   });
   ws.on("close", () => setTimeout(connectBulkWS, 5000));

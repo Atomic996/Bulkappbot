@@ -16,56 +16,6 @@ import {
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { db, auth } from '../firebase.js';
-import { 
-  collection, 
-  query, 
-  orderBy, 
-  limit, 
-  onSnapshot
-} from 'firebase/firestore';
-import { 
-  signInWithPopup, 
-  GoogleAuthProvider, 
-  onAuthStateChanged,
-  type User
-} from 'firebase/auth';
-
-enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
-
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null, setQuotaExceeded?: (val: boolean) => void) {
-  const errorMessage = error instanceof Error ? error.message : String(error);
-  const isQuotaError = errorMessage.includes('RESOURCE_EXHAUSTED') || errorMessage.includes('quota');
-  
-  if (isQuotaError && setQuotaExceeded) {
-    setQuotaExceeded(true);
-  }
-
-  const errInfo = {
-    error: errorMessage,
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-    },
-    operationType,
-    path
-  };
-  let errStr = "";
-  try {
-    errStr = JSON.stringify(errInfo);
-  } catch (e) {
-    errStr = String(errInfo);
-  }
-  console.error('Firestore Error: ', errStr);
-}
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -101,13 +51,10 @@ export const BulkAnalysis: React.FC = () => {
   const [trades, setTrades] = useState<BulkTrade[]>([]);
   const [wallets, setWallets] = useState<Record<string, WalletState>>({});
   const [isConnected, setIsConnected] = useState(true); // Server is handling connection
-  const [user, setUser] = useState<User | null>(null);
-  const [isAuthReady, setIsAuthReady] = useState(false);
-  const [quotaExceeded, setQuotaExceeded] = useState(false);
   const [lastSync, setLastSync] = useState<number | null>(null);
   const [wsStatus, setWsStatus] = useState<'connecting' | 'stable' | 'error'>('connecting');
 
-  // 1. Internal WebSocket for Real-time Updates (Bypasses Firestore)
+  // 1. Internal WebSocket for Real-time Updates
   useEffect(() => {
     const wsUrl = `${BACKEND_WS_URL}/ws/bulk`;
     let socket: WebSocket;
@@ -156,55 +103,6 @@ export const BulkAnalysis: React.FC = () => {
     return () => socket?.close();
   }, []);
 
-  useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, (u) => {
-      setUser(u);
-      setIsAuthReady(true);
-    });
-    return () => unsubscribeAuth();
-  }, []);
-
-  const handleSignIn = async () => {
-    try {
-      const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
-    } catch (error) {
-      console.error("Sign in error:", error instanceof Error ? error.message : String(error));
-    }
-  };
-
-  useEffect(() => {
-    if (!isAuthReady || !user) return;
-
-    // Load initial data from Firestore
-    const walletsQuery = query(collection(db, 'wallets'), orderBy('totalPnL', 'desc'), limit(50));
-    const unsubscribeWallets = onSnapshot(walletsQuery, (snapshot) => {
-      const walletMap: Record<string, WalletState> = {};
-      snapshot.forEach((doc) => {
-        walletMap[doc.id] = doc.data() as WalletState;
-      });
-      setWallets(walletMap);
-      setQuotaExceeded(false); // Reset if successful
-      setLastSync(Date.now());
-    }, (error) => handleFirestoreError(error, OperationType.GET, 'wallets', setQuotaExceeded));
-
-    const tradesQuery = query(collection(db, 'trades'), orderBy('timestamp', 'desc'), limit(50));
-    const unsubscribeTrades = onSnapshot(tradesQuery, (snapshot) => {
-      const tradesList: BulkTrade[] = [];
-      snapshot.forEach((doc) => {
-        tradesList.push(doc.data() as BulkTrade);
-      });
-      setTrades(tradesList);
-      setQuotaExceeded(false); // Reset if successful
-      setLastSync(Date.now());
-    }, (error) => handleFirestoreError(error, OperationType.GET, 'trades', setQuotaExceeded));
-
-    return () => {
-      unsubscribeWallets();
-      unsubscribeTrades();
-    };
-  }, [isAuthReady, user]);
-
   const topTraders = useMemo(() => {
     return (Object.values(wallets) as WalletState[])
       .sort((a, b) => b.totalPnL - a.totalPnL)
@@ -227,41 +125,6 @@ export const BulkAnalysis: React.FC = () => {
 
   return (
     <div className="flex-1 flex flex-col gap-6 p-4 md:p-6 overflow-hidden h-full relative">
-      {quotaExceeded && (
-        <div className="bg-rose-500/10 border border-rose-500/20 p-3 rounded-lg flex items-center gap-3 animate-pulse">
-          <AlertCircle size={16} className="text-rose-500 shrink-0" />
-          <div className="flex flex-col">
-            <span className="text-[10px] font-black uppercase tracking-widest text-rose-500">Firestore Quota Exceeded</span>
-            <p className="text-[9px] text-rose-200/60 font-mono">
-              The daily free tier limit for database operations has been reached. Data updates may be delayed until the quota resets (usually at midnight PST).
-            </p>
-          </div>
-        </div>
-      )}
-
-      {!user && isAuthReady && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm rounded-2xl border border-white/5">
-          <div className="bg-zinc-900 p-8 rounded-2xl border border-white/10 flex flex-col items-center gap-6 max-w-sm text-center shadow-2xl">
-            <div className="w-16 h-16 bg-blue-500/10 rounded-full flex items-center justify-center">
-              <Shield size={32} className="text-blue-500" />
-            </div>
-            <div className="flex flex-col gap-2">
-              <h3 className="text-xl font-black uppercase tracking-widest text-white">Database Access</h3>
-              <p className="text-zinc-500 text-sm leading-relaxed">
-                Connect your Google account to sync Bulk Flow data with the secure Firestore database.
-              </p>
-            </div>
-            <button 
-              onClick={handleSignIn}
-              className="w-full bg-white text-black font-black uppercase tracking-widest py-4 rounded-xl hover:bg-zinc-200 transition-all flex items-center justify-center gap-3"
-            >
-              <img src="https://www.google.com/favicon.ico" alt="Google" className="w-4 h-4" />
-              Sign in with Google
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Header Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-zinc-900/40 border border-white/5 p-4 rounded-xl flex flex-col gap-1">
@@ -291,24 +154,21 @@ export const BulkAnalysis: React.FC = () => {
           <div className="flex items-center justify-between">
             <span className="text-zinc-500 text-[10px] font-serif italic uppercase tracking-widest">Bulk Connection</span>
             <div className="flex items-center gap-2">
-              {quotaExceeded && (
-                <span className="text-[8px] font-mono text-rose-500 uppercase animate-pulse">Quota Limit</span>
-              ) }
               <span className={cn(
                 "text-[8px] font-mono uppercase",
                 wsStatus === 'stable' ? "text-emerald-500" : "text-rose-500"
               )}>
-                {wsStatus === 'stable' ? "Direct WS" : "Fallback Mode"}
+                {wsStatus === 'stable' ? "Direct WS" : "Connecting..."}
               </span>
             </div>
           </div>
           <div className="flex items-center gap-2 mt-1">
             <div className={cn(
               "w-2 h-2 rounded-full animate-pulse", 
-              wsStatus === 'stable' ? "bg-emerald-500" : isConnected && !quotaExceeded ? "bg-emerald-500" : "bg-rose-500"
+              wsStatus === 'stable' ? "bg-emerald-500" : "bg-rose-500"
             )} />
             <p className="text-sm font-mono font-bold text-white">
-              {wsStatus === 'stable' ? "STABLE (DIRECT)" : isConnected && !quotaExceeded ? "STABLE (DB)" : "DISCONNECTED"}
+              {wsStatus === 'stable' ? "STABLE (DIRECT)" : "DISCONNECTED"}
             </p>
           </div>
           <span className="text-[8px] font-mono text-zinc-600 uppercase">

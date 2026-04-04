@@ -445,6 +445,7 @@ const runAutoTrader = async () => {
   botStatus = "Analyzing...";
   for (const sym of ["BTC", "ETH", "SOL"]) {
     try {
+      await new Promise(r => setTimeout(r, 2000));
       const history = await fetchHistoricalData(sym, "1H", 300);
       if (history.length < 200) continue;
       const indicators = calculateIndicators(history);
@@ -465,7 +466,7 @@ const runAutoTrader = async () => {
   }
   botStatus = "Monitoring";
 };
-setInterval(runAutoTrader, 60000);
+setInterval(runAutoTrader, 5 * 60 * 1000);
 
 // --- SERVER START ---
 async function startServer() {

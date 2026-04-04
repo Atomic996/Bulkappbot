@@ -86,7 +86,7 @@ export default function App() {
 
   return (
     <ConnectionProvider endpoint={endpoint}>
-      <WalletProvider wallets={wallets} autoConnect={false} onError={onError}>
+      <WalletProvider wallets={wallets} autoConnect={true} onError={onError}>
         <WalletModalProvider>
           <div className="min-h-screen bg-black">
             <Dashboard />

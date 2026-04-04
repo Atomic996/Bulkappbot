@@ -44,7 +44,6 @@ let botBalance = 0;
 let botAddress: string | null = null;
 let botPositions: any[] = [];
 let botLogs: string[] = [];
-const pendingSessions = new Map<string, { sessionKeyPair: nacl.SignKeyPair; message: string }>();
 
 const app = express();
 app.use(express.json());
@@ -90,6 +89,7 @@ botRouter.post("/auth/init", async (req: Request, res: Response) => {
     // 2. Generate a temporary session key for the bot
     const sessionKeyPair = nacl.sign.keyPair();
     const sessionPubKey = bs58.encode(sessionKeyPair.publicKey);
+    const sessionPrivKey = bs58.encode(sessionKeyPair.secretKey);
 
     // 3. Build the SIWS message (Exact format required by Privy)
     const message = 
@@ -102,9 +102,16 @@ botRouter.post("/auth/init", async (req: Request, res: Response) => {
       `Issued At: ${ts}\n` +
       `Resources:\n- https://privy.io`;
 
-    pendingSessions.set(address, { sessionKeyPair, message });
+    // 4. Store session data in Firestore (Stateless fix for Vercel)
+    if (db) {
+      await setDoc(doc(db, "pending_sessions", address), {
+        message,
+        sessionPrivKey,
+        timestamp: Date.now()
+      });
+    }
     
-    console.log(`[Auth] Message generated for ${address}`);
+    console.log(`[Auth] Message generated and stored for ${address}`);
     res.json({ nonce, message });
   } catch (err: any) {
     const errorData = err.response?.data;
@@ -120,27 +127,46 @@ botRouter.post("/auth/init", async (req: Request, res: Response) => {
 botRouter.post("/auth/start", async (req: Request, res: Response) => {
   const { address, message, signature } = req.body;
   
-  const pending = pendingSessions.get(address);
-  if (!pending || pending.message !== message) {
-    return res.status(400).json({ error: "Invalid or expired session request" });
+  // 1. Retrieve session from Firestore
+  let sessionData: any = null;
+  if (db) {
+    const sessionDoc = await axios.get(`${process.env.FIREBASE_URL || ''}/pending_sessions/${address}`).catch(() => null);
+    // Note: Using direct db access if available
+    try {
+      const { getDoc } = await import("firebase/firestore");
+      const snap = await getDoc(doc(db, "pending_sessions", address));
+      if (snap.exists()) sessionData = snap.data();
+    } catch (e) {
+      console.error("Firestore retrieval error:", e);
+    }
+  }
+
+  if (!sessionData || sessionData.message !== message) {
+    return res.status(400).json({ error: "Invalid or expired session request. Please refresh and try again." });
   }
 
   if (botEnabled) {
     bulkClient?.stop();
   }
 
-  bulkClient = new BulkClient(pending.sessionKeyPair);
+  const sessionKeyPair = nacl.sign.keyPair.fromSecretKey(bs58.decode(sessionData.sessionPrivKey));
+  bulkClient = new BulkClient(sessionKeyPair);
   const ok = await bulkClient.authenticate(address, message, signature);
   
   if (ok) {
-    pendingSessions.delete(address);
+    // Cleanup
+    try {
+      const { deleteDoc } = await import("firebase/firestore");
+      await deleteDoc(doc(db, "pending_sessions", address));
+    } catch (e) {}
+
     bulkClient.connect();
     botEnabled = true;
     botStatus = "Monitoring";
     addBotLog("Bot Authorized & Started.");
     res.json({ success: true, enabled: true });
   } else {
-    res.status(500).json({ error: "Authentication failed" });
+    res.status(500).json({ error: "Authentication failed with Privy. Check server logs." });
   }
 });
 
@@ -487,7 +513,8 @@ async function startServer() {
     app.get("*", (req, res) => res.sendFile(path.join(distPath, "index.html")));
   }
 
-  const server = app.listen(3000, "0.0.0.0", () => console.log(`Server running on http://localhost:3000`));
+  const PORT = process.env.PORT || 3000;
+  const server = app.listen(PORT, "0.0.0.0", () => console.log(`Server running on port ${PORT}`));
   server.on("upgrade", (request, socket, head) => {
     if (request.url === "/ws/bulk") wss.handleUpgrade(request, socket, head, (ws) => wss.emit("connection", ws, request));
   });

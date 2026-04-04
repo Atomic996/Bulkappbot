@@ -7,6 +7,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
 import axios from "axios";
+import fetch from "node-fetch";
 import nacl from "tweetnacl";
 import bs58 from "bs58";
 import { calculateIndicators, calculateTechnicalScore } from "./src/lib/indicators.js";
@@ -73,19 +74,21 @@ botRouter.post("/auth/init", async (req: Request, res: Response) => {
     console.log(`[Auth] Initializing SIWS for: ${address}`);
     
     // 1. Get nonce from Privy
-    const r_init = await axios.post(`${PRIVY_URL}/siws/init`, { address }, {
+    const r_init_res = await fetch(`${PRIVY_URL}/siws/init`, {
+      method: "POST",
       headers: {
-        "Origin": ORIGIN_URL,
-        "Referer": ORIGIN_URL + "/",
-        "Privy-App-Id": PRIVY_APP_ID,
         "Content-Type": "application/json",
+        "Privy-App-Id": PRIVY_APP_ID,
+        "Origin": "https://early.bulk.trade",
+        "Referer": "https://early.bulk.trade/",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "application/json, text/plain, */*"
+        "Accept": "application/json"
       },
-      timeout: 10000
+      body: JSON.stringify({ address })
     });
     
-    const nonce = r_init.data.nonce;
+    const r_init_data = await r_init_res.json() as any;
+    const nonce = r_init_data.nonce;
     const ts = new Date().toISOString().replace(".000Z", "Z");
     
     // 2. Generate a temporary session key for the bot
@@ -95,9 +98,9 @@ botRouter.post("/auth/init", async (req: Request, res: Response) => {
 
     // 3. Build the SIWS message (Exact format required by Privy)
     const message = 
-      `${new URL(ORIGIN_URL).hostname} wants you to sign in with your Solana account:\n${address}\n\n` +
+      `early.bulk.trade wants you to sign in with your Solana account:\n${address}\n\n` +
       `You are proving you own ${address}.\n\n` +
-      `URI: ${ORIGIN_URL}\n` +
+      `URI: https://early.bulk.trade\n` +
       `Version: 1\n` +
       `Chain ID: mainnet\n` +
       `Nonce: ${nonce}\n` +
@@ -244,12 +247,12 @@ class BulkClient {
 
   async authenticate(address: string, message: string, signature: string) {
     const headers = { 
-      "Origin": ORIGIN_URL, 
-      "Referer": ORIGIN_URL + "/", 
+      "Origin": "https://early.bulk.trade", 
+      "Referer": "https://early.bulk.trade/", 
       "Privy-App-Id": PRIVY_APP_ID, 
       "Content-Type": "application/json",
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-      "Accept": "application/json, text/plain, */*"
+      "Accept": "application/json"
     };
 
     console.log("[Auth] Authenticating with Privy:", {
@@ -259,29 +262,34 @@ class BulkClient {
     });
 
     try {
-      const r_auth = await axios.post(`${PRIVY_URL}/siws/authenticate`, {
-        connectorType: "solana_adapter",
-        message: message,
-        signature: signature,
-        message_type: "plain",
-        mode: "login-or-sign-up",
-        walletClientType: "Phantom"
-      }, { headers });
+      const r_auth_res = await fetch(`${PRIVY_URL}/siws/authenticate`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          connectorType: "solana_adapter",
+          message: message,
+          signature: signature,
+          message_type: "plain",
+          mode: "login-or-sign-up",
+          walletClientType: "Phantom"
+        })
+      });
 
-      console.log("[Auth] Privy Response Success:", r_auth.data.token ? "Token Received" : "No Token");
+      const r_auth_data = await r_auth_res.json() as any;
+      console.log("[Auth] Privy Response Success:", r_auth_data.token ? "Token Received" : "No Token");
 
-      this.token = r_auth.data.token;
+      if (!r_auth_data.token) {
+        console.error("[Auth] Privy Error Details:", r_auth_data);
+        return false;
+      }
+
+      this.token = r_auth_data.token;
       this.address = address;
       botAddress = address;
       addBotLog(`Authenticated ${address.slice(0, 6)}...`);
       return true;
     } catch (err: any) {
-      const errorData = err.response?.data;
-      console.error("Bulk Auth Error:", {
-        status: err.response?.status,
-        data: errorData,
-        message: err.message
-      });
+      console.error("Bulk Auth Error:", err.message);
       return false;
     }
   }

@@ -32,7 +32,7 @@ try {
 }
 
 const BULK_WS_URL = "wss://exchange-ws1.bulk.trade";
-const ORIGIN_URL = "https://early.bulk.trade";
+const ORIGIN_URL = "https://bulkappbot-production.up.railway.app";
 const PRIVY_APP_ID = "cmbuls93q01jol20lf0ak0plb";
 const PRIVY_URL = "https://auth.privy.io/api/v1";
 const SERVER_KEY = "bulk_flow_server_auth_key_2026_03_31";

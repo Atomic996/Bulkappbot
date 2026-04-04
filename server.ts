@@ -8,7 +8,7 @@ import axios from "axios";
 import fetch from "node-fetch";
 import nacl from "tweetnacl";
 import bs58 from "bs58";
-import { calculateIndicators, calculateTechnicalScore } from "./src/lib/indicators.js";
+import { computeIndicators, calculateTechnicalScore, getTradeDecision } from "./src/lib/indicators.js";
 import { fetchHistoricalData } from "./src/lib/api.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -143,12 +143,13 @@ botRouter.post("/auth/start", async (req: Request, res: Response) => {
 });
 
 botRouter.post("/toggle", async (req: Request, res: Response) => {
-  if (botEnabled) {
-    bulkClient?.stop();
-    res.json({ success: true, enabled: false });
-  } else {
-    res.status(400).json({ error: "Bot is not running" });
-  }
+  if (!bulkClient) return res.status(400).json({ error: "No active session. Please authorize first." });
+  
+  botEnabled = !botEnabled;
+  botStatus = botEnabled ? "Monitoring" : "Idle";
+  addBotLog(botEnabled ? "Auto-Trader Enabled." : "Auto-Trader Disabled.");
+  
+  res.json({ success: true, enabled: botEnabled, status: botStatus });
 });
 
 app.use("/api/bot", botRouter);
@@ -365,10 +366,11 @@ class BulkClient {
 
   stop() {
     this.ws?.close();
+    this.ws = null;
     botEnabled = false;
-    botStatus = "Stopped";
+    botStatus = "Disconnected";
     botAddress = null;
-    addBotLog("Bot Stopped.");
+    addBotLog("Session Closed.");
   }
 }
 
@@ -443,26 +445,48 @@ connectBulkWS();
 const runAutoTrader = async () => {
   if (!botEnabled || !bulkClient) return;
   botStatus = "Analyzing...";
+  
   for (const sym of ["BTC", "ETH", "SOL"]) {
     try {
-      await new Promise(r => setTimeout(r, 2000));
+      await new Promise(r => setTimeout(r, 2000)); // Avoid rate limits
+      
       const history = await fetchHistoricalData(sym, "1H", 300);
-      if (history.length < 200) continue;
-      const indicators = calculateIndicators(history);
-      const score = calculateTechnicalScore(indicators, history[history.length - 1].close);
+      if (history.length < 200) {
+        addBotLog(`⚠️ ${sym}: Not enough data (${history.length}/200)`);
+        continue;
+      }
+
       const symbol = `${sym}-USD`;
       const pos = botPositions.find(p => p.symbol === symbol);
-      const size = pos ? parseFloat(pos.size) : 0;
-      if (score > 85 && size <= 0) {
-        if (size < 0) await bulkClient.closePosition(symbol, size, "short");
-        await bulkClient.placeOrder(symbol, "buy", 0.01);
-      } else if (score < 15 && size >= 0) {
-        if (size > 0) await bulkClient.closePosition(symbol, size, "long");
-        await bulkClient.placeOrder(symbol, "sell", 0.01);
-      } else if ((size > 0 && score < 50) || (size < 0 && score > 50)) {
-        await bulkClient.closePosition(symbol, size, size > 0 ? "long" : "short");
+      const currentPosition = pos 
+        ? { size: parseFloat(pos.size), entryPrice: parseFloat(pos.price) } 
+        : null;
+
+      const decision = getTradeDecision(history, botBalance, symbol, currentPosition);
+      
+      addBotLog(`📊 ${sym} | ${decision.regime} | [${decision.strategy}] | Score: ${decision.score.toFixed(0)} | → ${decision.action}`);
+      if (decision.reason) addBotLog(`   ${decision.reason}`);
+
+      switch (decision.action) {
+        case 'BUY':
+          await bulkClient.placeOrder(symbol, "buy", decision.size);
+          break;
+        case 'SELL':
+          await bulkClient.placeOrder(symbol, "sell", decision.size);
+          break;
+        case 'CLOSE_LONG':
+          if (currentPosition) await bulkClient.closePosition(symbol, currentPosition.size, "long");
+          break;
+        case 'CLOSE_SHORT':
+          if (currentPosition) await bulkClient.closePosition(symbol, currentPosition.size, "short");
+          break;
+        default:
+          // HOLD - do nothing
+          break;
       }
-    } catch (err) {}
+    } catch (err: any) {
+      addBotLog(`❌ ${sym} Error: ${err.message}`);
+    }
   }
   botStatus = "Monitoring";
 };

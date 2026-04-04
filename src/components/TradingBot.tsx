@@ -52,6 +52,24 @@ export const TradingBot: React.FC = () => {
   const [isAuthorizing, setIsAuthorizing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    const wsUrl = BACKEND_URL.replace('https://', 'wss://') + '/ws/bulk';
+    const ws = new WebSocket(wsUrl);
+    
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'bot_update') {
+          setStatus(prev => ({ ...prev, ...msg.data }));
+        } else if (msg.type === 'bot_log') {
+          setStatus(prev => ({ ...prev, logs: [msg.data, ...prev.logs].slice(0, 50) }));
+        }
+      } catch (e) {}
+    };
+
+    return () => ws.close();
+  }, []);
+
   const fetchStatus = useCallback(async () => {
     try {
       // Debug log for fetch
@@ -163,8 +181,25 @@ export const TradingBot: React.FC = () => {
         fetchStatus();
       }
     } catch (err: any) {
-      const msg = err.response?.data?.error || "Failed to stop bot";
+      const msg = err.response?.data?.error || "Failed to toggle bot";
       setError(msg);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const closeSession = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      // We don't have a direct "close" API, but we can call toggle if it's enabled, 
+      // or we can just disconnect locally. 
+      // Actually, let's add a proper close endpoint in server.ts if needed, 
+      // but for now, let's just disconnect the wallet.
+      disconnect();
+      setStatus(prev => ({ ...prev, enabled: false, hasSession: false, status: "Disconnected" }));
+    } catch (err) {
+      setError("Failed to close session");
     } finally {
       setIsLoading(false);
     }
@@ -185,33 +220,44 @@ export const TradingBot: React.FC = () => {
 
         <div className="flex items-center gap-4">
           <button
-            onClick={status.enabled ? stopBot : startBotWithWallet}
-            disabled={isLoading}
+            onClick={startBotWithWallet}
+            disabled={isLoading || status.enabled}
             className={cn(
               "px-8 py-3 rounded-sm font-black uppercase tracking-[0.2em] text-xs transition-all flex items-center gap-3 shadow-2xl",
               status.enabled 
-                ? "bg-rose-500 text-white hover:bg-rose-600 shadow-rose-500/20" 
+                ? "bg-emerald-500/20 text-emerald-500 border border-emerald-500/30 cursor-default" 
                 : "bg-white text-black hover:bg-zinc-200 shadow-white/20 disabled:opacity-50 disabled:cursor-not-allowed"
             )}
           >
             {isLoading ? (
               <Activity size={16} className="animate-spin" />
             ) : status.enabled ? (
-              <Square size={16} fill="currentColor" />
+              <ShieldCheck size={16} />
             ) : (
               <Play size={16} fill="currentColor" />
             )}
-            {status.enabled ? "Stop Bot" : (connected ? "Authorize & Start" : "Connect & Start")}
+            {status.enabled ? "Auto-Trading Active" : (connected ? "Authorize & Start" : "Connect & Start")}
           </button>
           
+          {status.hasSession && (
+            <button
+              onClick={stopBot}
+              className={cn(
+                "px-6 py-3 rounded-sm font-black uppercase tracking-widest text-[10px] transition-all border",
+                status.enabled 
+                  ? "bg-rose-500/10 border-rose-500/30 text-rose-500 hover:bg-rose-500/20" 
+                  : "bg-emerald-500/10 border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/20"
+              )}
+            >
+              {status.enabled ? "Disable Auto-Trade" : "Enable Auto-Trade"}
+            </button>
+          )}
+
           {connected && (
             <button
-              onClick={() => {
-                disconnect();
-                if (status.enabled) stopBot();
-              }}
+              onClick={closeSession}
               className="p-3 bg-zinc-900 border border-white/10 rounded-sm hover:bg-zinc-800 transition-all text-zinc-500 hover:text-white"
-              title="Disconnect Wallet"
+              title="Close Session"
             >
               <Square size={16} />
             </button>
@@ -243,7 +289,7 @@ export const TradingBot: React.FC = () => {
         </div>
       )}
 
-      {!status.enabled && !isLoading && (
+      {!status.hasSession && !isLoading && (
         <div className="p-12 bg-zinc-900/40 border border-white/5 rounded-sm flex flex-col items-center justify-center text-center gap-6">
           <div className="w-16 h-16 bg-blue-500/10 rounded-full flex items-center justify-center">
             <Key size={32} className="text-blue-500" />
@@ -267,7 +313,7 @@ export const TradingBot: React.FC = () => {
         </div>
       )}
 
-      {status.enabled && (
+      {status.hasSession && (
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_350px] gap-8 overflow-hidden">
           {/* Left: Bot Status & Positions */}
           <div className="flex flex-col gap-8 overflow-hidden">

@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import { AssetSignal, PriceData, NewsItem, Timeframe } from '../types.js';
 import { fetchHistoricalData, fetchNews } from '../lib/api.js';
-import { calculateIndicators, calculateTechnicalScore, backtestStrategy, calculateFinalScore, getRecommendation } from '../lib/indicators.js';
+import { computeIndicators, calculateTechnicalScore, backtestStrategy, calculateFinalScore, getRecommendation } from '../lib/indicators.js';
 import { analyzeNews, calculateNewsScore } from '../lib/gemini.js';
 import { analyzeSentimentAlgorithmic, calculateAlgorithmicNewsScore } from '../lib/sentiment.js';
 import { AssetCard } from './AssetCard.js';
@@ -90,7 +90,7 @@ export const Dashboard: React.FC = () => {
       setHistoricalData(prev => ({ ...prev, [symbol]: history }));
 
       // 3. Calculate technical indicators immediately
-      const indicators = calculateIndicators(history);
+      const indicators = computeIndicators(history);
       const lastPrice = history[history.length - 1]?.close || 0;
       const prevPrice = history[history.length - 2]?.close || 0;
       const change24h = ((lastPrice - prevPrice) / prevPrice) * 100;
@@ -99,8 +99,8 @@ export const Dashboard: React.FC = () => {
       // 4. Update signals with technical data first (Fast path)
       const performance = backtestStrategy(history);
       const newsScore = calculateAlgorithmicNewsScore(analyzeSentimentAlgorithmic(rawNews));
-      const finalScore = calculateFinalScore(technicalScore, newsScore, indicators);
-      const recommendation = getRecommendation(finalScore, technicalScore, newsScore);
+      const finalScore = calculateFinalScore(technicalScore, newsScore);
+      const recommendation = getRecommendation(finalScore, technicalScore);
 
       setSignals(prev => ({
         ...prev,
@@ -216,11 +216,11 @@ export const Dashboard: React.FC = () => {
               const price = priceVal as number;
               if (nextSignals[symbol] && next[symbol]) {
                 const history = next[symbol];
-                const indicators = calculateIndicators(history);
+                const indicators = computeIndicators(history);
                 const technicalScore = calculateTechnicalScore(indicators, price);
                 const newsScore = nextSignals[symbol].news_score;
-                const finalScore = calculateFinalScore(technicalScore, newsScore, indicators);
-                const recommendation = getRecommendation(finalScore, technicalScore, newsScore);
+                const finalScore = calculateFinalScore(technicalScore, newsScore);
+                const recommendation = getRecommendation(finalScore, technicalScore);
 
                 nextSignals[symbol] = {
                   ...nextSignals[symbol],

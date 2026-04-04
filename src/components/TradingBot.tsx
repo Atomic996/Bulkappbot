@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
+import { useWalletModal } from '@solana/wallet-adapter-react-ui';
 import axios from 'axios';
 import { 
   Play, 
@@ -37,7 +37,8 @@ interface BotStatus {
 const BACKEND_URL = "https://bulkappbot-production.up.railway.app";
 
 export const TradingBot: React.FC = () => {
-  const { publicKey, signMessage, connected, wallet, disconnect } = useWallet();
+  const { publicKey, signMessage, connected, disconnect } = useWallet();
+  const { setVisible } = useWalletModal();
   const [status, setStatus] = useState<BotStatus>({
     enabled: false,
     status: "Initializing...",
@@ -48,6 +49,7 @@ export const TradingBot: React.FC = () => {
     address: null
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [isAuthorizing, setIsAuthorizing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const fetchStatus = useCallback(async () => {
@@ -103,7 +105,8 @@ export const TradingBot: React.FC = () => {
 
   const startBotWithWallet = async () => {
     if (!connected) {
-      setError("Please connect your wallet first using the button above.");
+      setIsAuthorizing(true);
+      setVisible(true);
       return;
     }
     if (!signMessage) {
@@ -115,18 +118,18 @@ export const TradingBot: React.FC = () => {
     setError(null);
     
     try {
-      // 1. Get SIWS message from server (Proxying Privy to avoid CORS/Origin issues)
+      // 1. Get SIWS message from server
       const siwsRes = await axios.post(`${BACKEND_URL}/api/bot/auth/init`, { address: publicKey?.toBase58() });
       const { message } = siwsRes.data;
 
-      // 2. Sign the message with the real wallet (Matching user's clean logic)
+      // 2. Sign the message
       const encodedMessage = new TextEncoder().encode(message);
       const signed = await signMessage(encodedMessage);
       
-      // Convert signature to base64 for Privy
+      // Convert signature to base64
       const signatureBase64 = btoa(String.fromCharCode.apply(null, Array.from(signed)));
 
-      // 3. Send signature back to server to start the bot
+      // 3. Send signature back to server
       await axios.post(`${BACKEND_URL}/api/bot/auth/start`, {
         address: publicKey?.toBase58(),
         message,
@@ -139,8 +142,15 @@ export const TradingBot: React.FC = () => {
       setError(err.response?.data?.error || err.message || "Authorization failed");
     } finally {
       setIsLoading(false);
+      setIsAuthorizing(false);
     }
   };
+
+  useEffect(() => {
+    if (connected && isAuthorizing && !isLoading) {
+      startBotWithWallet();
+    }
+  }, [connected, isAuthorizing, isLoading]);
 
   const stopBot = async () => {
     setIsLoading(true);
@@ -174,19 +184,9 @@ export const TradingBot: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-4">
-          <div className="flex flex-col items-end gap-1">
-            <WalletMultiButton className="!bg-zinc-900 !border !border-white/10 !rounded-sm !text-[10px] !font-black !uppercase !tracking-widest !h-10 hover:!bg-zinc-800 transition-all" />
-            {connected && (
-              <div className="flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-[8px] font-black text-emerald-500 uppercase tracking-widest">Wallet Linked</span>
-              </div>
-            )}
-          </div>
-          
           <button
             onClick={status.enabled ? stopBot : startBotWithWallet}
-            disabled={isLoading || (!connected && !status.enabled)}
+            disabled={isLoading}
             className={cn(
               "px-8 py-3 rounded-sm font-black uppercase tracking-[0.2em] text-xs transition-all flex items-center gap-3 shadow-2xl",
               status.enabled 
@@ -201,12 +201,15 @@ export const TradingBot: React.FC = () => {
             ) : (
               <Play size={16} fill="currentColor" />
             )}
-            {status.enabled ? "Stop Bot" : "Start Bot"}
+            {status.enabled ? "Stop Bot" : (connected ? "Authorize & Start" : "Connect & Start")}
           </button>
           
-          {connected && !status.enabled && (
+          {connected && (
             <button
-              onClick={() => disconnect()}
+              onClick={() => {
+                disconnect();
+                if (status.enabled) stopBot();
+              }}
               className="p-3 bg-zinc-900 border border-white/10 rounded-sm hover:bg-zinc-800 transition-all text-zinc-500 hover:text-white"
               title="Disconnect Wallet"
             >
@@ -240,46 +243,31 @@ export const TradingBot: React.FC = () => {
         </div>
       )}
 
-      {!connected && !status.enabled && (
+      {!status.enabled && !isLoading && (
         <div className="p-12 bg-zinc-900/40 border border-white/5 rounded-sm flex flex-col items-center justify-center text-center gap-6">
           <div className="w-16 h-16 bg-blue-500/10 rounded-full flex items-center justify-center">
             <Key size={32} className="text-blue-500" />
           </div>
           <div className="flex flex-col gap-2 max-w-md">
-            <h3 className="text-lg font-black uppercase tracking-widest text-white">Wallet Connection Required</h3>
+            <h3 className="text-lg font-black uppercase tracking-widest text-white">
+              {connected ? "Authorization Required" : "Wallet Connection Required"}
+            </h3>
             <p className="text-zinc-500 text-sm font-mono leading-relaxed">
-              Connect your Solana wallet to authorize the bot session. The bot will use a temporary session key to execute trades on your behalf.
-            </p>
-          </div>
-          <WalletMultiButton className="!bg-white !text-black !font-black !uppercase !tracking-widest !rounded-sm hover:!bg-zinc-200 transition-all" />
-        </div>
-      )}
-
-      {connected && !status.enabled && !isLoading && (
-        <motion.div 
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="p-6 bg-blue-500/10 border border-blue-500/30 rounded-sm flex flex-col items-center gap-4 text-center"
-        >
-          <div className="w-12 h-12 bg-blue-500/20 rounded-full flex items-center justify-center">
-            <ShieldCheck size={24} className="text-blue-400" />
-          </div>
-          <div className="flex flex-col gap-1">
-            <h3 className="text-sm font-black uppercase tracking-widest text-white">Authorize Trading Session</h3>
-            <p className="text-[10px] text-zinc-400 font-mono max-w-xs">
-              Your wallet is connected. Click below to sign a secure authorization message and start the autonomous bot.
+              {connected 
+                ? "Your wallet is connected. Now authorize the bot session to start trading autonomously."
+                : "Connect your Solana wallet to authorize the bot session. The bot will use a temporary session key to execute trades on your behalf."}
             </p>
           </div>
           <button 
             onClick={startBotWithWallet}
-            className="px-10 py-3 bg-blue-500 text-white text-xs font-black uppercase tracking-[0.2em] rounded-sm hover:bg-blue-600 transition-all shadow-lg shadow-blue-500/20"
+            className="px-10 py-4 bg-white text-black text-xs font-black uppercase tracking-[0.2em] rounded-sm hover:bg-zinc-200 transition-all shadow-xl"
           >
-            Sign & Start Bot
+            {connected ? "Sign & Start Bot" : "Connect Wallet & Start"}
           </button>
-        </motion.div>
+        </div>
       )}
 
-      {(connected || status.enabled) && (
+      {status.enabled && (
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_350px] gap-8 overflow-hidden">
           {/* Left: Bot Status & Positions */}
           <div className="flex flex-col gap-8 overflow-hidden">

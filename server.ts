@@ -92,16 +92,15 @@ botRouter.post("/auth/init", async (req: Request, res: Response) => {
     const sessionPubKey = bs58.encode(sessionKeyPair.publicKey);
 
     // 3. Build the SIWS message (Exact format required by Privy)
-    const message = `early.bulk.trade wants you to sign in with your Solana account:\n` +
-                    `${address}\n\n` +
-                    `You are proving you own ${address}.\n\n` +
-                    `URI: https://early.bulk.trade\n` +
-                    `Version: 1\n` +
-                    `Chain ID: mainnet\n` +
-                    `Nonce: ${nonce}\n` +
-                    `Issued At: ${ts}\n` +
-                    `Resources:\n` +
-                    `- https://privy.io`;
+    const message = 
+      `early.bulk.trade wants you to sign in with your Solana account:\n${address}\n\n` +
+      `You are proving you own ${address}.\n\n` +
+      `URI: https://early.bulk.trade\n` +
+      `Version: 1\n` +
+      `Chain ID: mainnet\n` +
+      `Nonce: ${nonce}\n` +
+      `Issued At: ${ts}\n` +
+      `Resources:\n- https://privy.io`;
 
     pendingSessions.set(address, { sessionKeyPair, message });
     

@@ -15,7 +15,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const BULK_WS_URL = "wss://exchange-ws1.bulk.trade";
-const ORIGIN_URL = "https://bulkappbot.vercel.app";
+const ORIGIN_URL = "https://early.bulk.trade";
 const PRIVY_APP_ID = "cmbuls93q01jol20lf0ak0plb";
 const PRIVY_URL = "https://auth.privy.io/api/v1";
 const SERVER_KEY = "bulk_flow_server_auth_key_2026_03_31";
@@ -290,9 +290,9 @@ class BulkClient {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
     const ts = Date.now();
     
-    // The Python script shows a specific structure for actions
-    // payload = {"account": addr, "actions": [action], "nonce": ts, "type": "action"}
     const action = { [method]: params };
+
+    // ترتيب المفاتيح مهم — مثل Python OrderedDict
     const payload = {
       account: this.address,
       actions: [action],
@@ -300,13 +300,17 @@ class BulkClient {
       type: "action"
     };
 
-    // Important: Bulk.trade requires consistent JSON serialization for signing
-    const payloadJson = JSON.stringify(payload);
-    const signatureBytes = nacl.sign.detached(Buffer.from(payloadJson), this.sessionKeyPair.secretKey);
+    // ← مهم جداً: بدون مسافات مثل Python separators=(',', ':')
+    const payloadJson = JSON.stringify(payload, null, 0)
+      .replace(/\s/g, '');
+
+    const signatureBytes = nacl.sign.detached(
+      Buffer.from(payloadJson),
+      this.sessionKeyPair.secretKey
+    );
     const signature = bs58.encode(signatureBytes);
     const signer = bs58.encode(this.sessionKeyPair.publicKey);
 
-    // Python uses method: "post" for actions
     const msg = {
       method: "post",
       id: ts,

@@ -363,7 +363,12 @@ export const Dashboard: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen bg-gray-950 text-white overflow-hidden font-sans">
+    <div className="flex h-screen bg-gray-950 text-white overflow-hidden font-sans relative">
+      {/* Background Glows */}
+      <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-purple-900/20 blur-[120px] rounded-full pointer-events-none" />
+      <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-900/10 blur-[120px] rounded-full pointer-events-none" />
+      <div className="absolute top-[20%] right-[10%] w-[30%] h-[30%] bg-purple-900/10 blur-[100px] rounded-full pointer-events-none" />
+      
       {/* Alerts Overlay */}
       <div className="fixed top-20 right-6 z-[100] flex flex-col gap-3 pointer-events-none">
         <AnimatePresence>
@@ -403,13 +408,6 @@ export const Dashboard: React.FC = () => {
           activeTab={activeTab}
           setActiveTab={setActiveTab}
           currentTime={currentTime}
-        />
-
-        <StatsHeader 
-          balance={botStatus.balance}
-          activePositions={botStatus.positions.length}
-          volume={1245000}
-          marketCap={2450000000}
         />
 
         <main className="flex-1 overflow-y-auto custom-scrollbar p-6">

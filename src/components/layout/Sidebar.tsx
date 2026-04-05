@@ -48,21 +48,21 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onLog
   return (
     <aside className="hidden lg:flex flex-col items-center py-8 w-20 bg-gray-900/50 border-r border-purple-500/20 backdrop-blur-xl z-30">
       <div className="mb-10">
-        <div className="w-10 h-10 bg-gradient-to-br from-purple-600 to-blue-600 rounded-xl flex items-center justify-center shadow-[0_0_20px_rgba(168,85,247,0.5)]">
-          <TrendingUp className="text-white" size={24} />
+        <div className="w-12 h-12 bg-purple-500/10 rounded-2xl flex items-center justify-center border border-purple-500/30 shadow-[0_0_20px_rgba(168,85,247,0.2)]">
+          <div className="w-6 h-6 rounded-full border-4 border-purple-500 border-t-transparent animate-[spin_3s_linear_infinite]" />
         </div>
       </div>
       
       <nav className="flex-1 flex flex-col gap-6">
         <SidebarIcon 
           icon={LayoutDashboard} 
-          label="Assets" 
+          label="Dashboard" 
           active={activeTab === 'assets'} 
           onClick={() => setActiveTab('assets')} 
         />
         <SidebarIcon 
           icon={BarChart3} 
-          label="Trade" 
+          label="Trading" 
           active={activeTab === 'analysis'} 
           onClick={() => setActiveTab('analysis')} 
         />
@@ -80,19 +80,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onLog
         />
         <SidebarIcon 
           icon={TrendingUp} 
-          label="Charts" 
+          label="Technical" 
           active={activeTab === 'technical'} 
           onClick={() => setActiveTab('technical')} 
         />
         <SidebarIcon 
-          icon={Terminal} 
-          label="Logs" 
-          active={activeTab === 'logs'} 
-          onClick={() => setActiveTab('logs')} 
-        />
-        <SidebarIcon 
           icon={User} 
-          label="User" 
+          label="Profile" 
           active={activeTab === 'user'} 
           onClick={() => setActiveTab('user')} 
         />

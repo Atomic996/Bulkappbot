@@ -8,8 +8,10 @@ import axios from "axios";
 import fetch from "node-fetch";
 import nacl from "tweetnacl";
 import bs58 from "bs58";
-import { computeIndicators, calculateTechnicalScore, getTradeDecision } from "./src/lib/indicators.js";
+import { computeIndicators, calculateTechnicalScore, getTradeDecision, RISK_CONFIG, TradeDecision } from "./src/lib/indicators.js";
 import { fetchHistoricalData } from "./src/lib/api.js";
+// @ts-ignore
+import { NativeKeypair, NativeSigner } from 'bulk-keychain';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -27,6 +29,7 @@ let botBalance = 0;
 let botAddress: string | null = null;
 let botPositions: any[] = [];
 let botLogs: string[] = [];
+let botOrderType: 'market' | 'limit' | 'auto' = 'auto';
 
 const pendingSessions = new Map<string, { message: string, sessionPrivKey: string, timestamp: number }>();
 
@@ -46,8 +49,20 @@ botRouter.get("/status", (req: Request, res: Response) => {
     positions: botPositions,
     logs: botLogs,
     address: botAddress,
-    hasSession: !!bulkClient
+    hasSession: !!bulkClient,
+    orderType: botOrderType
   });
+});
+
+botRouter.post("/settings", (req: Request, res: Response) => {
+  const { orderType } = req.body;
+  if (orderType === 'market' || orderType === 'limit' || orderType === 'auto') {
+    botOrderType = orderType;
+    addBotLog(`Order Type updated to: ${botOrderType.toUpperCase()}`);
+    res.json({ success: true, orderType: botOrderType });
+  } else {
+    res.status(400).json({ error: "Invalid order type" });
+  }
 });
 
 botRouter.post("/auth/init", async (req: Request, res: Response) => {
@@ -75,15 +90,15 @@ botRouter.post("/auth/init", async (req: Request, res: Response) => {
     const nonce = r_init_data.nonce;
     const ts = new Date().toISOString().replace(".000Z", "Z");
     
-    // 2. Generate a temporary session key for the bot
-    const sessionKeyPair = nacl.sign.keyPair();
-    const sessionPubKey = bs58.encode(sessionKeyPair.publicKey);
-    const sessionPrivKey = bs58.encode(sessionKeyPair.secretKey);
+    // 2. Generate a temporary session key for the bot using bulk-keychain
+    const keypair = new NativeKeypair();
+    const sessionPubKey = keypair.address();
+    const sessionPrivKey = keypair.toBase58();
 
-    // 3. Build the SIWS message (Exact format required by Privy)
+    // 3. Build the SIWS message (Explicitly include the session key for stability)
     const message = 
       `early.bulk.trade wants you to sign in with your Solana account:\n${address}\n\n` +
-      `You are proving you own ${address}.\n\n` +
+      `Authorize session key ${sessionPubKey} to trade on your behalf.\n\n` +
       `URI: https://early.bulk.trade\n` +
       `Version: 1\n` +
       `Chain ID: mainnet\n` +
@@ -125,8 +140,8 @@ botRouter.post("/auth/start", async (req: Request, res: Response) => {
     bulkClient?.stop();
   }
 
-  const sessionKeyPair = nacl.sign.keyPair.fromSecretKey(bs58.decode(sessionData.sessionPrivKey));
-  bulkClient = new BulkClient(sessionKeyPair);
+  const keypair = NativeKeypair.fromBase58(sessionData.sessionPrivKey);
+  bulkClient = new BulkClient(keypair);
   const ok = await bulkClient.authenticate(address, message, signature);
   
   if (ok) {
@@ -169,7 +184,8 @@ app.get("/api/news", async (req: Request, res: Response) => {
 
   const newsDataApiKey = process.env.NEWSDATA_API_KEY;
   if (!newsDataApiKey || newsDataApiKey === "") {
-    return res.status(500).json({ error: "NEWSDATA_API_KEY is missing in environment variables" });
+    console.warn("[News] NEWSDATA_API_KEY is missing. Returning empty news list.");
+    return res.json([]);
   }
 
   try {
@@ -208,10 +224,14 @@ class BulkClient {
   private ws: WebSocket | null = null;
   private token: string | null = null;
   private address: string | null = null;
-  private sessionKeyPair: nacl.SignKeyPair;
+  private signer: NativeSigner;
+  private keypair: NativeKeypair;
 
-  constructor(sessionKeyPair: nacl.SignKeyPair) {
-    this.sessionKeyPair = sessionKeyPair;
+  constructor(keypair: NativeKeypair) {
+    this.keypair = keypair;
+    this.signer = new NativeSigner(keypair);
+    // Enable pre-computed order IDs for batches
+    this.signer.setComputeBatchOrderIds(true);
   }
 
   async authenticate(address: string, message: string, signature: string) {
@@ -311,11 +331,14 @@ class BulkClient {
 
   async sendAction(method: string, params: any) {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-    const ts = Date.now();
     
+    // Using bulk-keychain for consistent signing
+    // For generic actions like updateUserSettings, we can use a custom sign if needed,
+    // but bulk-keychain is optimized for orders.
+    // Let's keep a fallback for non-order actions or use bulk-keychain's internal logic.
+    
+    const ts = Date.now();
     const action = { [method]: params };
-
-    // ترتيب المفاتيح مهم — مثل Python OrderedDict
     const payload = {
       account: this.address,
       actions: [action],
@@ -323,16 +346,13 @@ class BulkClient {
       type: "action"
     };
 
-    // ← مهم جداً: بدون مسافات مثل Python separators=(',', ':')
-    const payloadJson = JSON.stringify(payload, null, 0)
-      .replace(/\s/g, '');
-
+    const payloadJson = JSON.stringify(payload, null, 0).replace(/\s/g, '');
     const signatureBytes = nacl.sign.detached(
       Buffer.from(payloadJson),
-      this.sessionKeyPair.secretKey
+      bs58.decode(this.keypair.toBase58()) // Fallback to nacl for generic actions
     );
     const signature = bs58.encode(signatureBytes);
-    const signer = bs58.encode(this.sessionKeyPair.publicKey);
+    const signer = this.keypair.address();
 
     const msg = {
       method: "post",
@@ -350,26 +370,82 @@ class BulkClient {
     this.ws.send(JSON.stringify(msg));
   }
 
+  async placeOrder(symbol: string, side: 'buy' | 'sell', size: number, price: number = 0, typeOverride?: 'market' | 'limit', stopLossPrice?: number, takeProfitPrice?: number) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+
+    const formattedSize = symbol.startsWith("BTC") ? size.toFixed(4) : size.toFixed(2);
+    const isBuy = side === 'buy';
+    const finalType = typeOverride || botOrderType;
+
+    const entryOrder: any = {
+      type: 'order',
+      symbol,
+      isBuy,
+      price: price || 0,
+      size: parseFloat(formattedSize),
+      orderType: (finalType === 'limit' && price > 0) 
+        ? { type: 'limit', tif: 'GTC' } 
+        : { type: 'market', isMarket: true, triggerPx: 0 }
+    };
+
+    const actions: any[] = [entryOrder];
+
+    // Add Protection Orders (SL/TP)
+    if (stopLossPrice) {
+      actions.push({
+        type: 'stop',
+        symbol,
+        isBuy: !isBuy,
+        size: parseFloat(formattedSize),
+        triggerPrice: stopLossPrice,
+      });
+    }
+
+    if (takeProfitPrice) {
+      actions.push({
+        type: 'takeProfit',
+        symbol,
+        isBuy: !isBuy,
+        size: parseFloat(formattedSize),
+        triggerPrice: takeProfitPrice,
+      });
+    }
+
+    // Sign atomically if multiple actions
+    const signed = actions.length > 1 
+      ? this.signer.signGroup(actions) 
+      : this.signer.sign(entryOrder);
+
+    const msg = {
+      method: "post",
+      id: signed.nonce,
+      request: {
+        type: "action",
+        payload: {
+          actions: JSON.parse(signed.actions),
+          nonce: signed.nonce,
+          account: this.address,
+          signer: signed.signer,
+          signature: signed.signature
+        }
+      }
+    };
+    
+    this.ws.send(JSON.stringify(msg));
+    
+    const typeLabel = finalType === 'auto' ? 'AUTO' : finalType.toUpperCase();
+    const orderId = signed.orderId || (signed as any).orderIds?.[0];
+    
+    addBotLog(`Placed ${typeLabel} ${side.toUpperCase()} order for ${symbol} | Size: ${formattedSize}`);
+    if (stopLossPrice) addBotLog(`   └─ SL: ${stopLossPrice}`);
+    if (takeProfitPrice) addBotLog(`   └─ TP: ${takeProfitPrice}`);
+    if (orderId) addBotLog(`   └─ ID: ${orderId}`);
+  }
+
   async setLeverage(symbol: string, leverage: number) {
     // Correct format from Python: {"updateUserSettings": {"m": {symbol: int(leverage)}}}
     await this.sendAction("updateUserSettings", { m: { [symbol]: leverage } });
     addBotLog(`Updated Leverage for ${symbol} to ${leverage}x`);
-  }
-
-  async placeOrder(symbol: string, side: 'buy' | 'sell', size: number) {
-    // Formatting size based on asset (from Python logic)
-    const formattedSize = symbol.startsWith("BTC") ? size.toFixed(4) : size.toFixed(2);
-    
-    // Python order structure: {"m": {"b": is_buy, "c": symbol, "r": False, "sz": size}}
-    const params = {
-      b: side === 'buy',
-      c: symbol,
-      r: false,
-      sz: formattedSize
-    };
-    
-    await this.sendAction("m", params);
-    addBotLog(`Placed ${side.toUpperCase()} order for ${symbol} | Size: ${formattedSize}`);
   }
 
   async closePosition(symbol: string, size: number, side: string) {
@@ -497,16 +573,27 @@ const runAutoTrader = async () => {
         : null;
 
       const decision = getTradeDecision(history, botBalance, symbol, currentPosition);
+      const currentPrice = history[history.length - 1].close;
       
       addBotLog(`📊 ${sym} | ${decision.regime} | [${decision.strategy}] | Score: ${decision.score.toFixed(0)} | → ${decision.action}`);
       if (decision.reason) addBotLog(`   ${decision.reason}`);
 
+      // Check for over-trading
+      if ((decision.action === 'BUY' || decision.action === 'SELL') && !currentPosition) {
+        if (botPositions.length >= RISK_CONFIG.maxOpenPositions) {
+          addBotLog(`⚠️ Max positions reached (${RISK_CONFIG.maxOpenPositions}). Skipping ${sym}.`);
+          continue;
+        }
+      }
+
       switch (decision.action) {
         case 'BUY':
-          await bulkClient.placeOrder(symbol, "buy", decision.size);
+          const buyType = botOrderType === 'auto' ? decision.orderType : botOrderType;
+          await bulkClient.placeOrder(symbol, "buy", decision.size, currentPrice, buyType, decision.stopLossPrice, decision.takeProfitPrice);
           break;
         case 'SELL':
-          await bulkClient.placeOrder(symbol, "sell", decision.size);
+          const sellType = botOrderType === 'auto' ? decision.orderType : botOrderType;
+          await bulkClient.placeOrder(symbol, "sell", decision.size, currentPrice, sellType, decision.stopLossPrice, decision.takeProfitPrice);
           break;
         case 'CLOSE_LONG':
           if (currentPosition) await bulkClient.closePosition(symbol, currentPosition.size, "long");

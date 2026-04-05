@@ -4,9 +4,10 @@ import { PriceData } from '../types.js';
 // ══════════════════════════════════════════
 //   ⚙️ إعدادات إدارة المخاطر
 // ══════════════════════════════════════════
-const RISK_CONFIG = {
+export const RISK_CONFIG = {
   maxRiskPerTrade:    0.02,   // أقصى خسارة لكل صفقة = 2% من الرصيد
   maxTotalExposure:   0.06,   // أقصى تعرض كلي = 6% من الرصيد (3 صفقات)
+  maxOpenPositions:   3,      // أقصى عدد صفقات مفتوحة في نفس الوقت
   minScoreToTrade:    68,     // أدنى score لفتح صفقة
   highConfScore:      80,     // score عالي = حجم أكبر
   trailingATRMult:    1.2,    // مضاعف ATR للـ Trailing Stop
@@ -170,6 +171,9 @@ export interface TradeDecision {
   regime: MarketRegime;
   confidence: 'HIGH' | 'MEDIUM' | 'LOW';
   reason: string;
+  orderType: 'market' | 'limit';
+  stopLossPrice?: number;
+  takeProfitPrice?: number;
 }
 
 export function getTradeDecision(
@@ -178,7 +182,7 @@ export function getTradeDecision(
   symbol: string,
   currentPosition: any
 ): TradeDecision {
-  if (data.length < 200) return { action: 'HOLD', size: 0, score: 50, strategy: '-', regime: 'UNCERTAIN', confidence: 'LOW', reason: 'بيانات غير كافية' };
+  if (data.length < 200) return { action: 'HOLD', size: 0, score: 50, strategy: '-', regime: 'UNCERTAIN', confidence: 'LOW', reason: 'بيانات غير كافية', orderType: 'market' };
 
   const ind = computeIndicators(data);
   const regime = detectMarketRegime(ind);
@@ -186,23 +190,72 @@ export function getTradeDecision(
   
   const confidence = score > 80 || score < 20 ? 'HIGH' : score > 70 || score < 30 ? 'MEDIUM' : 'LOW';
 
+  // --- خوارزمية اختيار نوع الطلب الذكي ---
+  const volatility = ind.atr / ind.price;
+  const isHighUrgency = score > 85 || score < 15;
+  const isHighVolatility = volatility > 0.003; // تقلبات أعلى من 0.3%
+  
+  const getOrderType = (action: string): 'market' | 'limit' => {
+    if (action.startsWith('CLOSE_')) return 'market'; // الخروج السريع دائماً ماركت
+    if (isHighUrgency || isHighVolatility) return 'market'; // في التقلبات العالية أو الإشارات القوية جداً
+    return 'limit'; // في الحالات العادية نستخدم ليميت لتوفير الرسوم
+  };
+
   if (currentPosition && currentPosition.size !== 0) {
     const isLong = currentPosition.size > 0;
-    if (isLong && score < 35) return { action: 'CLOSE_LONG', size: Math.abs(currentPosition.size), score, strategy: 'Exit', regime, confidence, reason: 'انعكاس الإشارة' };
-    if (!isLong && score > 65) return { action: 'CLOSE_SHORT', size: Math.abs(currentPosition.size), score, strategy: 'Exit', regime, confidence, reason: 'انعكاس الإشارة' };
-    return { action: 'HOLD', size: 0, score, strategy: 'Manage', regime, confidence, reason: 'استمرار المركز' };
+    if (isLong && score < 35) {
+      const action = 'CLOSE_LONG';
+      return { action, size: Math.abs(currentPosition.size), score, strategy: 'Exit', regime, confidence, reason: 'انعكاس الإشارة', orderType: getOrderType(action) };
+    }
+    if (!isLong && score > 65) {
+      const action = 'CLOSE_SHORT';
+      return { action, size: Math.abs(currentPosition.size), score, strategy: 'Exit', regime, confidence, reason: 'انعكاس الإشارة', orderType: getOrderType(action) };
+    }
+    return { action: 'HOLD', size: 0, score, strategy: 'Manage', regime, confidence, reason: 'استمرار المركز', orderType: 'market' };
   }
 
   if (score > RISK_CONFIG.minScoreToTrade) {
+    const action = 'BUY';
     const size = calculatePositionSize(balance, ind.price, ind.atr, score, symbol);
-    return { action: 'BUY', size, score, strategy: regime, regime, confidence, reason: `إشارة شراء قوية [${regime}]` };
+    const slDistance = ind.atr * RISK_CONFIG.initialSLATRMult;
+    const stopLossPrice = ind.price - slDistance;
+    const takeProfitPrice = ind.price + (slDistance * RISK_CONFIG.tpRRRatio);
+    
+    return { 
+      action, 
+      size, 
+      score, 
+      strategy: regime, 
+      regime, 
+      confidence, 
+      reason: `إشارة شراء قوية [${regime}]`, 
+      orderType: getOrderType(action),
+      stopLossPrice: parseFloat(stopLossPrice.toFixed(symbol.includes('BTC') ? 2 : 4)),
+      takeProfitPrice: parseFloat(takeProfitPrice.toFixed(symbol.includes('BTC') ? 2 : 4))
+    };
   }
   if (score < (100 - RISK_CONFIG.minScoreToTrade)) {
+    const action = 'SELL';
     const size = calculatePositionSize(balance, ind.price, ind.atr, score, symbol);
-    return { action: 'SELL', size, score, strategy: regime, regime, confidence, reason: `إشارة بيع قوية [${regime}]` };
+    const slDistance = ind.atr * RISK_CONFIG.initialSLATRMult;
+    const stopLossPrice = ind.price + slDistance;
+    const takeProfitPrice = ind.price - (slDistance * RISK_CONFIG.tpRRRatio);
+
+    return { 
+      action, 
+      size, 
+      score, 
+      strategy: regime, 
+      regime, 
+      confidence, 
+      reason: `إشارة بيع قوية [${regime}]`, 
+      orderType: getOrderType(action),
+      stopLossPrice: parseFloat(stopLossPrice.toFixed(symbol.includes('BTC') ? 2 : 4)),
+      takeProfitPrice: parseFloat(takeProfitPrice.toFixed(symbol.includes('BTC') ? 2 : 4))
+    };
   }
 
-  return { action: 'HOLD', size: 0, score, strategy: '-', regime, confidence: 'LOW', reason: 'منطقة محايدة' };
+  return { action: 'HOLD', size: 0, score, strategy: '-', regime, confidence: 'LOW', reason: 'منطقة محايدة', orderType: 'market' };
 }
 
 export function calculateFinalScore(technicalScore: number, newsScore: number): number {

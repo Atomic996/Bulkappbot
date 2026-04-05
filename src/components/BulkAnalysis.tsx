@@ -44,8 +44,8 @@ interface WalletState {
   lastUpdate: number;
 }
 
-const BACKEND_URL = "https://bulkappbot-production.up.railway.app";
-const BACKEND_WS_URL = "wss://bulkappbot-production.up.railway.app";
+const BACKEND_URL = typeof window !== 'undefined' ? window.location.origin : "";
+const BACKEND_WS_URL = typeof window !== 'undefined' ? window.location.origin.replace('http', 'ws') : "";
 
 export const BulkAnalysis: React.FC = () => {
   const [trades, setTrades] = useState<BulkTrade[]>([]);

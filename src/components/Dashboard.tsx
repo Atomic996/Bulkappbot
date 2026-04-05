@@ -20,7 +20,8 @@ import {
   Newspaper,
   BarChart3,
   Clock,
-  Wallet
+  Wallet,
+  User
 } from 'lucide-react';
 import { AssetSignal, PriceData, NewsItem, Timeframe } from '../types.js';
 import { fetchHistoricalData, fetchNews } from '../lib/api.js';
@@ -34,6 +35,8 @@ import { ChatAdvisor } from './ChatAdvisor.js';
 import { BulkAnalysis } from './BulkAnalysis.js';
 import { TradingBot } from './TradingBot.js';
 import { WalletView } from './WalletView.js';
+import { OrderBook } from './OrderBook.js';
+import { RecentTrades } from './RecentTrades.js';
 import TradingViewWidget from './TradingViewWidget.js';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -278,56 +281,57 @@ export const Dashboard: React.FC = () => {
   const currentNews = useMemo(() => news[selectedSymbol] || [], [news, selectedSymbol]);
 
   return (
-    <div className="min-h-screen bg-[#050505] text-zinc-100 font-sans selection:bg-blue-500/30 flex flex-col overflow-hidden">
-      {/* Structural Grid Background */}
-      <div className="fixed inset-0 pointer-events-none opacity-20 z-0" 
+    <div className="flex flex-col h-screen bg-[#050505] text-zinc-100 font-sans selection:bg-primary/30 overflow-hidden">
+      {/* Background Effects */}
+      <div className="fixed inset-0 pointer-events-none opacity-[0.03] z-0" 
            style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, rgba(255,255,255,0.05) 1px, transparent 0)', backgroundSize: '32px 32px' }} />
+      <div className="fixed top-0 left-1/4 w-[500px] h-[500px] bg-primary/10 blur-[120px] rounded-full pointer-events-none -translate-y-1/2" />
 
       {/* Top Navigation - Command Center Style */}
-      <nav className="h-14 border-b border-white/10 bg-black/60 backdrop-blur-md flex items-center justify-between px-4 md:px-6 z-50 shrink-0">
+      <nav className="h-20 border-b border-white/10 bg-black/60 backdrop-blur-md flex items-center justify-between px-4 md:px-8 z-50 shrink-0">
         <div className="flex items-center gap-4 md:gap-8">
-          <div className="flex items-center gap-2 md:gap-3">
-            <div className="w-7 h-7 md:w-8 md:h-8 bg-zinc-100 rounded-sm flex items-center justify-center">
-              <Zap className="text-black" size={16} strokeWidth={2.5} />
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center glow-purple">
+              <Zap className="text-white" size={20} strokeWidth={2.5} />
             </div>
             <div className="flex flex-col -space-y-1">
-              <span className="text-[10px] md:text-xs font-black tracking-tighter uppercase italic text-white">Sentinel.AI</span>
-              <span className="text-[8px] md:text-[9px] font-mono text-zinc-500 uppercase tracking-widest">v2.4.0</span>
+              <span className="text-sm md:text-base font-black tracking-tighter uppercase italic text-white">Sentinel.AI</span>
+              <span className="text-[9px] font-mono text-zinc-500 uppercase tracking-widest">Autonomous Trading Hub</span>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-3 md:gap-6">
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-white/5 border border-white/10 rounded-sm">
-            <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse shadow-[0_0_8px_rgba(255,255,255,0.5)]" />
-            <span className="text-[10px] font-black text-white uppercase tracking-[0.2em]">{selectedSymbol}</span>
+        <div className="flex items-center gap-4 md:gap-8">
+          <div className="hidden md:flex items-center gap-3 px-4 py-2 bg-white/5 border border-white/10 rounded-xl">
+            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+            <span className="text-[10px] font-black text-white uppercase tracking-[0.2em]">{selectedSymbol} / USD</span>
           </div>
 
-          <div className="hidden lg:flex items-center gap-4 px-4 py-1.5 border-x border-white/10">
-            <div className="flex flex-col items-end">
-              <span className="text-[9px] font-serif italic text-zinc-500">Market Status</span>
-              <div className="flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
-                <span className="text-[10px] font-mono text-emerald-500 uppercase font-bold">Operational</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 md:gap-3">
-            <button 
-              onClick={() => setIsSidebarOpen(true)}
-              className="w-8 h-8 md:w-9 md:h-9 rounded-sm bg-white flex flex-col items-center justify-center gap-[3px] hover:bg-zinc-200 transition-all shadow-[0_0_20px_rgba(255,255,255,0.15)] group"
-            >
-              <div className="w-4 h-[1.5px] bg-black group-hover:w-5 transition-all" />
-              <div className="w-4 h-[1.5px] bg-black" />
-              <div className="w-4 h-[1.5px] bg-black group-hover:w-5 transition-all" />
-            </button>
-          </div>
+          <button 
+            onClick={() => setActiveTab('wallet')}
+            className="group relative px-6 py-2.5 rounded-xl bg-primary/10 border border-primary/30 text-primary font-black uppercase tracking-widest text-[10px] transition-all hover:bg-primary/20 glow-purple flex items-center gap-3"
+          >
+            <Wallet size={14} />
+            <span>Connect Wallet</span>
+            <div className="absolute inset-0 border border-primary/20 rounded-xl blur-[4px] pointer-events-none group-hover:blur-[6px] transition-all" />
+          </button>
         </div>
       </nav>
 
-      {/* Main Content Grid - Full Width */}
-      <main className="flex-1 flex flex-col overflow-hidden z-10 relative">
+      {/* Main Content Area */}
+      <main className="flex-1 flex overflow-hidden relative">
+        {/* Left Sidebar - Desktop Icons */}
+        <aside className="hidden md:flex w-20 flex-col items-center py-8 border-r border-white/10 bg-black/40 gap-8">
+          <SidebarIcon icon={<LayoutGrid size={20} />} active={activeTab === 'assets'} onClick={() => setActiveTab('assets')} />
+          <SidebarIcon icon={<TrendingUp size={20} />} active={activeTab === 'analysis'} onClick={() => setActiveTab('analysis')} />
+          <SidebarIcon icon={<Newspaper size={20} />} active={activeTab === 'news'} onClick={() => setActiveTab('news')} />
+          <SidebarIcon icon={<Cpu size={20} />} active={activeTab === 'bot'} onClick={() => setActiveTab('bot')} />
+          <SidebarIcon icon={<BarChart3 size={20} />} active={activeTab === 'technical'} onClick={() => setActiveTab('technical')} />
+          <div className="mt-auto">
+            <SidebarIcon icon={<User size={20} />} active={false} onClick={() => {}} />
+          </div>
+        </aside>
+
         {/* Center: Main Analysis View */}
         <section className="flex flex-col flex-1 overflow-hidden bg-black/40">
           {/* Performance Optimized Stats Header */}
@@ -342,7 +346,7 @@ export const Dashboard: React.FC = () => {
               label="Technical Analysis" 
               value={currentSignal?.technical_score !== undefined ? `${Number(currentSignal.technical_score).toFixed(0)}%` : '0%'} 
               subValue="Pure Math" 
-              color="white" 
+              color="purple" 
             />
             <StatBox 
               label="Market Sentiment" 
@@ -406,7 +410,7 @@ export const Dashboard: React.FC = () => {
           </div>
 
           {/* Main Viewport Content */}
-          <div className="flex-1 overflow-y-auto lg:overflow-hidden relative flex flex-col">
+          <div className="flex-1 overflow-y-auto custom-scrollbar relative flex flex-col">
             <AnimatePresence mode="popLayout">
               {activeTab === 'assets' && (
                 <motion.div
@@ -416,21 +420,21 @@ export const Dashboard: React.FC = () => {
                   exit={{ opacity: 0, y: -10 }}
                   className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-8"
                 >
-                  <div className="max-w-4xl mx-auto space-y-8">
+                  <div className="max-w-6xl mx-auto space-y-8">
                     <div className="flex items-center justify-between border-b border-white/10 pb-4">
                       <div className="flex flex-col">
-                        <span className="text-[10px] font-serif italic text-zinc-500 uppercase tracking-widest">Market Overview</span>
+                        <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Market Overview</span>
                         <h2 className="text-xl font-black text-white uppercase tracking-tighter">Asset Index</h2>
                       </div>
                       <div className="flex items-center gap-4 text-zinc-500">
                         <div className="flex items-center gap-2">
-                          <div className="w-2 h-2 rounded-full bg-emerald-500" />
-                          <span className="text-[10px] font-mono uppercase">Live Feed</span>
+                          <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+                          <span className="text-[10px] font-mono uppercase font-bold">Live Feed</span>
                         </div>
                       </div>
                     </div>
 
-                    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
                       {SYMBOLS.map(symbol => (
                         <MemoizedAssetCard 
                           key={symbol}
@@ -462,15 +466,83 @@ export const Dashboard: React.FC = () => {
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
-                  className="flex-1 flex flex-col min-h-[500px] p-4 md:p-6"
+                  className="flex-1 flex flex-col p-4 md:p-6 gap-6"
                 >
-                  <MemoizedChart 
-                    data={currentHistory} 
-                    indicators={currentSignal?.indicators || {}} 
-                    symbol={selectedSymbol}
-                    timeframe={timeframe}
-                    onTimeframeChange={setTimeframe}
-                  />
+                  <div className="grid lg:grid-cols-[1fr_320px] gap-6 flex-1">
+                    <div className="flex flex-col gap-6">
+                      <div className="h-[400px] md:h-[500px] glass-card rounded-2xl overflow-hidden p-4">
+                        <MemoizedChart 
+                          data={currentHistory} 
+                          indicators={currentSignal?.indicators || {}} 
+                          symbol={selectedSymbol}
+                          timeframe={timeframe}
+                          onTimeframeChange={setTimeframe}
+                        />
+                      </div>
+                      
+                      <div className="grid md:grid-cols-2 gap-6 h-[300px]">
+                        <OrderBook />
+                        <RecentTrades />
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-6">
+                      <div className="glass-card rounded-2xl p-6 flex flex-col gap-4 neon-border">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-xs font-black text-white uppercase tracking-widest">Automated Trading Bot</h3>
+                          <div className="px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[8px] font-black text-emerald-500 uppercase">Active</div>
+                        </div>
+                        
+                        <div className="p-4 bg-white/[0.02] border border-white/5 rounded-xl flex flex-col gap-3">
+                          <div className="flex justify-between items-center">
+                            <div className="flex items-center gap-2">
+                              <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+                              <span className="text-[10px] font-black text-white uppercase">{selectedSymbol} Bot</span>
+                            </div>
+                            <span className="text-[10px] font-mono text-emerald-500">+3.2% Profit</span>
+                          </div>
+                          <div className="h-12 w-full bg-gradient-to-r from-emerald-500/20 to-transparent rounded-lg relative overflow-hidden">
+                            <div className="absolute inset-x-0 bottom-0 h-0.5 bg-emerald-500/30" />
+                          </div>
+                        </div>
+
+                        <button className="w-full py-3 rounded-xl bg-white/5 border border-white/10 text-[10px] font-black text-zinc-400 uppercase tracking-widest hover:bg-white/10 transition-all">
+                          Configure Strategy
+                        </button>
+                      </div>
+
+                      <div className="flex-1 glass-card rounded-2xl p-6 flex flex-col gap-4 relative overflow-hidden">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <MessageSquare size={14} className="text-primary" />
+                            <h3 className="text-xs font-black text-white uppercase tracking-widest">AI Chat Assistant</h3>
+                          </div>
+                        </div>
+                        <div className="flex-1 flex flex-col gap-3 overflow-y-auto custom-scrollbar pr-2">
+                          <div className="p-3 bg-primary/10 border border-primary/20 rounded-xl rounded-tl-none">
+                            <p className="text-[10px] text-zinc-300 leading-relaxed">
+                              Hello! I've analyzed the current market conditions for {selectedSymbol}. Indicators suggest a potential breakout.
+                            </p>
+                          </div>
+                          <div className="p-3 bg-white/5 border border-white/10 rounded-xl rounded-tr-none ml-auto max-w-[80%]">
+                            <p className="text-[10px] text-zinc-400">What's the best entry price?</p>
+                          </div>
+                        </div>
+                        <div className="pt-4 border-t border-white/10">
+                          <div className="flex gap-2">
+                            <input 
+                              type="text" 
+                              placeholder="Ask Sentinel..." 
+                              className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-[10px] text-white focus:outline-none focus:border-primary/50 transition-all"
+                            />
+                            <button className="p-2 bg-primary rounded-lg text-white glow-purple">
+                              <ChevronRight size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </motion.div>
               )}
               {activeTab === 'bulk' && (
@@ -623,47 +695,47 @@ export const Dashboard: React.FC = () => {
         </section>
       </main>
 
-      {/* Bottom Navigation (Visible on all screens as requested) */}
-      <div className="h-16 border-t border-white/10 bg-black/80 backdrop-blur-xl flex items-center justify-around px-4 shrink-0 z-50">
+      {/* Bottom Navigation (Mobile Only) */}
+      <div className="md:hidden h-20 border-t border-white/10 bg-black/80 backdrop-blur-xl flex items-center justify-around px-6 shrink-0 z-50">
         <button 
           onClick={() => setActiveTab('assets')}
           className={cn(
-            "flex flex-col items-center gap-1 transition-all",
-            activeTab === 'assets' ? "text-white" : "text-zinc-600"
+            "flex flex-col items-center gap-1.5 transition-all duration-300",
+            activeTab === 'assets' ? "text-primary scale-110" : "text-zinc-600"
           )}
         >
-          <LayoutGrid size={20} />
-          <span className="text-[8px] font-black uppercase tracking-widest">Assets</span>
+          <LayoutGrid size={22} className={activeTab === 'assets' ? "glow-purple" : ""} />
+          <span className="text-[9px] font-black uppercase tracking-widest">Assets</span>
         </button>
         <button 
           onClick={() => setActiveTab('analysis')}
           className={cn(
-            "flex flex-col items-center gap-1 transition-all",
-            activeTab === 'analysis' || activeTab === 'technical' || activeTab === 'bulk' || activeTab === 'news' ? "text-white" : "text-zinc-600"
+            "flex flex-col items-center gap-1.5 transition-all duration-300",
+            activeTab === 'analysis' ? "text-primary scale-110" : "text-zinc-600"
           )}
         >
-          <BarChart3 size={20} />
-          <span className="text-[8px] font-black uppercase tracking-widest">Analysis</span>
+          <TrendingUp size={22} className={activeTab === 'analysis' ? "glow-purple" : ""} />
+          <span className="text-[9px] font-black uppercase tracking-widest">Trade</span>
         </button>
         <button 
           onClick={() => setActiveTab('bot')}
           className={cn(
-            "flex flex-col items-center gap-1 transition-all",
-            activeTab === 'bot' ? "text-white" : "text-zinc-600"
+            "flex flex-col items-center gap-1.5 transition-all duration-300",
+            activeTab === 'bot' ? "text-primary scale-110" : "text-zinc-600"
           )}
         >
-          <Cpu size={20} />
-          <span className="text-[8px] font-black uppercase tracking-widest">Bot</span>
+          <Cpu size={22} className={activeTab === 'bot' ? "glow-purple" : ""} />
+          <span className="text-[9px] font-black uppercase tracking-widest">Bot</span>
         </button>
         <button 
           onClick={() => setActiveTab('wallet')}
           className={cn(
-            "flex flex-col items-center gap-1 transition-all",
-            activeTab === 'wallet' ? "text-white" : "text-zinc-600"
+            "flex flex-col items-center gap-1.5 transition-all duration-300",
+            activeTab === 'wallet' ? "text-primary scale-110" : "text-zinc-600"
           )}
         >
-          <Wallet size={20} />
-          <span className="text-[8px] font-black uppercase tracking-widest">Wallet</span>
+          <Wallet size={22} className={activeTab === 'wallet' ? "glow-purple" : ""} />
+          <span className="text-[9px] font-black uppercase tracking-widest">Wallet</span>
         </button>
       </div>
 
@@ -806,24 +878,47 @@ export const Dashboard: React.FC = () => {
   );
 };
 
+const SidebarIcon: React.FC<{ icon: React.ReactNode; active: boolean; onClick: () => void }> = ({ icon, active, onClick }) => (
+  <button 
+    onClick={onClick}
+    className={cn(
+      "w-12 h-12 rounded-xl flex items-center justify-center transition-all duration-300 relative group",
+      active 
+        ? "bg-primary/20 text-primary glow-purple border border-primary/30" 
+        : "text-zinc-500 hover:text-zinc-300 hover:bg-white/5"
+    )}
+  >
+    {icon}
+    {active && (
+      <motion.div 
+        layoutId="sidebar-active"
+        className="absolute -left-4 w-1 h-8 bg-primary rounded-r-full glow-purple"
+      />
+    )}
+    <div className="absolute left-full ml-4 px-2 py-1 bg-zinc-800 text-white text-[10px] font-bold rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 whitespace-nowrap">
+      Menu Item
+    </div>
+  </button>
+);
+
 const StatBox: React.FC<{ label: string; value: string; subValue: string; color: 'emerald' | 'rose' | 'blue' | 'purple' | 'zinc' | 'white' }> = ({ label, value, subValue, color }) => (
-  <div className="p-3 md:p-5 flex flex-col gap-1 border-r border-white/10 last:border-r-0">
-    <span className="text-[8px] md:text-[9px] font-serif italic text-zinc-500 uppercase tracking-widest">{label}</span>
+  <div className="p-4 md:p-6 flex flex-col gap-1 border-r border-white/10 last:border-r-0 hover:bg-white/[0.01] transition-colors">
+    <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">{label}</span>
     <p className={cn(
-      "text-sm md:text-xl font-mono font-black tracking-tighter",
-      color === 'emerald' ? "text-emerald-500" : 
-      color === 'rose' ? "text-rose-500" : 
-      color === 'blue' ? "text-blue-500" : 
-      color === 'purple' ? "text-purple-500" : 
+      "text-lg md:text-2xl font-mono font-black tracking-tighter",
+      color === 'emerald' ? "text-emerald-400" : 
+      color === 'rose' ? "text-rose-400" : 
+      color === 'blue' ? "text-blue-400" : 
+      color === 'purple' ? "text-primary shadow-[0_0_15px_rgba(168,85,247,0.3)]" : 
       color === 'white' ? "text-white" : "text-zinc-100"
     )}>{value}</p>
-    <div className="flex items-center gap-1 md:gap-2">
-      <div className={cn("w-1 h-1 rounded-full", 
-        color === 'emerald' ? "bg-emerald-500" : 
-        color === 'rose' ? "bg-rose-500" : 
-        color === 'white' ? "bg-white shadow-[0_0_5px_rgba(255,255,255,0.5)]" : "bg-zinc-600"
+    <div className="flex items-center gap-2 mt-1">
+      <div className={cn("w-1.5 h-1.5 rounded-full", 
+        color === 'emerald' ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" : 
+        color === 'rose' ? "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]" : 
+        color === 'purple' ? "bg-primary animate-pulse shadow-[0_0_8px_rgba(168,85,247,0.5)]" : "bg-zinc-600"
       )} />
-      <span className="text-[8px] md:text-[9px] font-mono text-zinc-500 uppercase tracking-widest">{subValue}</span>
+      <span className="text-[9px] font-mono text-zinc-500 uppercase tracking-widest font-bold">{subValue}</span>
     </div>
   </div>
 );

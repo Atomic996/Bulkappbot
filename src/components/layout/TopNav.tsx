@@ -21,6 +21,7 @@ import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 interface TopNavProps {
   selectedSymbol: string;
   setShowAssetDrawer: (show: boolean) => void;
+  setIsMobileMenuOpen: (show: boolean) => void;
   activeTab: string;
   setActiveTab: (tab: any) => void;
   currentTime: string;
@@ -29,6 +30,7 @@ interface TopNavProps {
 export const TopNav: React.FC<TopNavProps> = ({ 
   selectedSymbol, 
   setShowAssetDrawer, 
+  setIsMobileMenuOpen,
   activeTab, 
   setActiveTab, 
   currentTime 
@@ -73,7 +75,10 @@ export const TopNav: React.FC<TopNavProps> = ({
           </div>
         </div>
         
-        <button className="lg:hidden p-2 text-purple-400 hover:bg-purple-500/10 rounded-lg transition-colors">
+        <button 
+          onClick={() => setIsMobileMenuOpen(true)}
+          className="lg:hidden p-2 text-purple-400 hover:bg-purple-500/10 rounded-lg transition-colors"
+        >
           <Menu size={24} />
         </button>
       </div>

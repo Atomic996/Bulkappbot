@@ -58,8 +58,10 @@ export const Dashboard: React.FC = () => {
   const [newsError, setNewsError] = useState<Record<string, string | null>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'assets' | 'analysis' | 'news' | 'bot' | 'technical' | 'logs' | 'user'>('assets');
+  const [activeTab, setActiveTab] = useState<'assets' | 'analysis' | 'news' | 'bot' | 'technical' | 'logs' | 'user'>('analysis');
   const [isAssetDrawerOpen, setIsAssetDrawerOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
   const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString());
   const [trades, setTrades] = useState<any[]>([]);
   const [wallets, setWallets] = useState<any[]>([]);
@@ -76,14 +78,6 @@ export const Dashboard: React.FC = () => {
   const [botMessage, setBotMessage] = useState('');
   const [showBotPanel, setShowBotPanel] = useState(false);
 
-  const wsRef = useRef<WebSocket | null>(null);
-  const priceUpdateBuffer = useRef<Record<string, number>>({});
-
-  useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date().toLocaleTimeString()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-
   const handleSendBotMessage = () => {
     if (!botMessage.trim()) return;
     setBotStatus(prev => ({
@@ -92,6 +86,15 @@ export const Dashboard: React.FC = () => {
     }));
     setBotMessage('');
   };
+
+  const wsRef = useRef<WebSocket | null>(null);
+  const priceUpdateBuffer = useRef<Record<string, number>>({});
+  const lastSignalUpdate = useRef<Record<string, number>>({});
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date().toLocaleTimeString()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const handleLogout = () => {
     window.location.reload();
@@ -279,12 +282,18 @@ export const Dashboard: React.FC = () => {
         });
         
         if (historyChanged) {
-          // Recalculate signals for updated assets
+          // Recalculate signals for updated assets, but throttle it
           setSignals(prevSignals => {
             const nextSignals = { ...prevSignals };
+            let signalsChanged = false;
+            const now = Date.now();
+
             Object.entries(updates).forEach(([symbol, priceVal]) => {
               const price = priceVal as number;
-              if (nextSignals[symbol] && next[symbol]) {
+              const lastUpdate = lastSignalUpdate.current[symbol] || 0;
+              
+              // Update signals only if it's the selected symbol OR it's been 5 seconds
+              if (nextSignals[symbol] && next[symbol] && (symbol === selectedSymbol || now - lastUpdate > 5000)) {
                 const history = next[symbol];
                 const indicators = computeIndicators(history);
                 const technicalScore = calculateTechnicalScore(indicators, price);
@@ -300,9 +309,18 @@ export const Dashboard: React.FC = () => {
                   final_score: finalScore,
                   recommendation
                 };
+                lastSignalUpdate.current[symbol] = now;
+                signalsChanged = true;
+              } else if (nextSignals[symbol]) {
+                // Just update the price without recalculating indicators
+                nextSignals[symbol] = {
+                  ...nextSignals[symbol],
+                  price
+                };
+                signalsChanged = true;
               }
             });
-            return nextSignals;
+            return signalsChanged ? nextSignals : prevSignals;
           });
         }
         
@@ -405,6 +423,7 @@ export const Dashboard: React.FC = () => {
         <TopNav 
           selectedSymbol={selectedSymbol}
           setShowAssetDrawer={setIsAssetDrawerOpen}
+          setIsMobileMenuOpen={setIsMobileMenuOpen}
           activeTab={activeTab}
           setActiveTab={setActiveTab}
           currentTime={currentTime}
@@ -484,6 +503,71 @@ export const Dashboard: React.FC = () => {
             )}
           </AnimatePresence>
         </main>
+
+        {/* Mobile Menu Drawer */}
+        <AnimatePresence>
+          {isMobileMenuOpen && (
+            <>
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 lg:hidden"
+              />
+              <motion.div 
+                initial={{ x: '-100%' }}
+                animate={{ x: 0 }}
+                exit={{ x: '-100%' }}
+                className="fixed left-0 top-0 bottom-0 w-64 bg-gray-900 border-r border-purple-500/20 z-50 p-6 shadow-2xl lg:hidden flex flex-col"
+              >
+                <div className="flex items-center justify-between mb-10">
+                  <div className="w-10 h-10 bg-purple-500/10 rounded-xl flex items-center justify-center border border-purple-500/30">
+                    <div className="w-5 h-5 rounded-full border-2 border-purple-500 border-t-transparent animate-spin" />
+                  </div>
+                  <button onClick={() => setIsMobileMenuOpen(false)} className="text-gray-500 hover:text-white">
+                    <RefreshCw size={20} />
+                  </button>
+                </div>
+                
+                <nav className="flex-1 flex flex-col gap-4">
+                  {[
+                    { id: 'assets', label: 'Dashboard', icon: LayoutGrid },
+                    { id: 'analysis', label: 'Trading', icon: BarChart3 },
+                    { id: 'news', label: 'News', icon: Newspaper },
+                    { id: 'bot', label: 'Bot', icon: Cpu },
+                    { id: 'technical', label: 'Technical', icon: TrendingUp },
+                    { id: 'user', label: 'Profile', icon: User },
+                  ].map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => {
+                        setActiveTab(item.id as any);
+                        setIsMobileMenuOpen(false);
+                      }}
+                      className={`flex items-center gap-4 p-4 rounded-xl transition-all ${
+                        activeTab === item.id 
+                          ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' 
+                          : 'text-gray-400 hover:bg-gray-800'
+                      }`}
+                    >
+                      <item.icon size={20} />
+                      <span className="font-bold text-sm">{item.label}</span>
+                    </button>
+                  ))}
+                </nav>
+                
+                <button 
+                  onClick={handleLogout}
+                  className="mt-auto flex items-center gap-4 p-4 text-gray-500 hover:text-rose-400 transition-colors"
+                >
+                  <RefreshCw size={20} className="rotate-180" />
+                  <span className="font-bold text-sm">Logout</span>
+                </button>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
 
         {/* Asset Selection Drawer (Mobile/TopNav) */}
         <AnimatePresence>

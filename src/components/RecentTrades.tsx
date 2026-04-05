@@ -10,7 +10,7 @@ interface RecentTradesProps {
   trades?: any[];
 }
 
-export const RecentTrades: React.FC<RecentTradesProps> = ({ trades = [] }) => {
+export const RecentTrades: React.FC<RecentTradesProps> = React.memo(({ trades = [] }) => {
   const displayTrades = trades.length > 0 ? trades.map(t => ({
     type: t.side === 'buy' ? 'Buy' : 'Sell',
     price: t.price,
@@ -59,4 +59,4 @@ export const RecentTrades: React.FC<RecentTradesProps> = ({ trades = [] }) => {
       </div>
     </div>
   );
-};
+});

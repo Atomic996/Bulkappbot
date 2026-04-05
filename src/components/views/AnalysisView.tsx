@@ -34,7 +34,7 @@ interface AnalysisViewProps {
   trades?: any[];
 }
 
-export const AnalysisView: React.FC<AnalysisViewProps> = ({
+export const AnalysisView: React.FC<AnalysisViewProps> = React.memo(({
   selectedSymbol,
   chartData,
   indicators,
@@ -223,4 +223,4 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
       </div>
     </div>
   );
-};
+});

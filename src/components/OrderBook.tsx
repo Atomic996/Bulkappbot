@@ -10,7 +10,7 @@ interface OrderBookProps {
   trades?: any[];
 }
 
-export const OrderBook: React.FC<OrderBookProps> = ({ trades = [] }) => {
+export const OrderBook: React.FC<OrderBookProps> = React.memo(({ trades = [] }) => {
   // Use real trades if available, otherwise fallback to mock for UI demo
   const displayTrades = trades.length > 0 ? trades.map(t => ({
     type: t.side === 'buy' ? 'Buy' : 'Sell',
@@ -63,4 +63,4 @@ export const OrderBook: React.FC<OrderBookProps> = ({ trades = [] }) => {
       </div>
     </div>
   );
-};
+});

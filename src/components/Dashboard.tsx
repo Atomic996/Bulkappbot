@@ -302,17 +302,22 @@ export const Dashboard: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-4 md:gap-8">
-          <div className="hidden md:flex items-center gap-3 px-4 py-2 bg-white/5 border border-white/10 rounded-xl">
+          <button 
+            onClick={() => setIsSidebarOpen(true)}
+            className="flex items-center gap-3 px-4 py-2 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all group"
+          >
             <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
             <span className="text-[10px] font-black text-white uppercase tracking-[0.2em]">{selectedSymbol} / USD</span>
-          </div>
+            <ChevronRight size={12} className="text-zinc-500 group-hover:translate-x-0.5 transition-transform" />
+          </button>
 
           <button 
             onClick={() => setActiveTab('wallet')}
             className="group relative px-6 py-2.5 rounded-xl bg-primary/10 border border-primary/30 text-primary font-black uppercase tracking-widest text-[10px] transition-all hover:bg-primary/20 glow-purple flex items-center gap-3"
           >
             <Wallet size={14} />
-            <span>Connect Wallet</span>
+            <span className="hidden sm:inline">Connect Wallet</span>
+            <span className="sm:hidden">Connect</span>
             <div className="absolute inset-0 border border-primary/20 rounded-xl blur-[4px] pointer-events-none group-hover:blur-[6px] transition-all" />
           </button>
         </div>
@@ -320,15 +325,15 @@ export const Dashboard: React.FC = () => {
 
       {/* Main Content Area */}
       <main className="flex-1 flex overflow-hidden relative">
-        {/* Left Sidebar - Desktop Icons */}
-        <aside className="hidden md:flex w-20 flex-col items-center py-8 border-r border-white/10 bg-black/40 gap-8">
-          <SidebarIcon icon={<LayoutGrid size={20} />} active={activeTab === 'assets'} onClick={() => setActiveTab('assets')} />
-          <SidebarIcon icon={<TrendingUp size={20} />} active={activeTab === 'analysis'} onClick={() => setActiveTab('analysis')} />
-          <SidebarIcon icon={<Newspaper size={20} />} active={activeTab === 'news'} onClick={() => setActiveTab('news')} />
-          <SidebarIcon icon={<Cpu size={20} />} active={activeTab === 'bot'} onClick={() => setActiveTab('bot')} />
-          <SidebarIcon icon={<BarChart3 size={20} />} active={activeTab === 'technical'} onClick={() => setActiveTab('technical')} />
+        {/* Left Sidebar - Primary Navigation */}
+        <aside className="flex w-16 md:w-20 flex-col items-center py-8 border-r border-white/10 bg-black/40 gap-8 z-50">
+          <SidebarIcon icon={<LayoutGrid size={20} />} active={activeTab === 'assets'} onClick={() => setActiveTab('assets')} label="Assets" />
+          <SidebarIcon icon={<TrendingUp size={20} />} active={activeTab === 'analysis'} onClick={() => setActiveTab('analysis')} label="Trade" />
+          <SidebarIcon icon={<Newspaper size={20} />} active={activeTab === 'news'} onClick={() => setActiveTab('news')} label="News" />
+          <SidebarIcon icon={<Cpu size={20} />} active={activeTab === 'bot'} onClick={() => setActiveTab('bot')} label="Bot" />
+          <SidebarIcon icon={<BarChart3 size={20} />} active={activeTab === 'technical'} onClick={() => setActiveTab('technical')} label="Charts" />
           <div className="mt-auto">
-            <SidebarIcon icon={<User size={20} />} active={false} onClick={() => {}} />
+            <SidebarIcon icon={<User size={20} />} active={activeTab === 'wallet'} onClick={() => setActiveTab('wallet')} label="Profile" />
           </div>
         </aside>
 
@@ -846,7 +851,7 @@ export const Dashboard: React.FC = () => {
       </AnimatePresence>
 
       {/* Alerts Overlay - Minimalist */}
-      <div className="fixed bottom-6 left-6 z-[100] space-y-2 pointer-events-none">
+      <div className="fixed bottom-6 left-20 z-[100] space-y-2 pointer-events-none">
         <AnimatePresence>
           {alerts.map(alert => (
             <motion.div
@@ -878,11 +883,11 @@ export const Dashboard: React.FC = () => {
   );
 };
 
-const SidebarIcon: React.FC<{ icon: React.ReactNode; active: boolean; onClick: () => void }> = ({ icon, active, onClick }) => (
+const SidebarIcon: React.FC<{ icon: React.ReactNode; active: boolean; onClick: () => void; label: string }> = ({ icon, active, onClick, label }) => (
   <button 
     onClick={onClick}
     className={cn(
-      "w-12 h-12 rounded-xl flex items-center justify-center transition-all duration-300 relative group",
+      "w-10 h-10 md:w-12 md:h-12 rounded-xl flex items-center justify-center transition-all duration-300 relative group",
       active 
         ? "bg-primary/20 text-primary glow-purple border border-primary/30" 
         : "text-zinc-500 hover:text-zinc-300 hover:bg-white/5"
@@ -895,21 +900,21 @@ const SidebarIcon: React.FC<{ icon: React.ReactNode; active: boolean; onClick: (
         className="absolute -left-4 w-1 h-8 bg-primary rounded-r-full glow-purple"
       />
     )}
-    <div className="absolute left-full ml-4 px-2 py-1 bg-zinc-800 text-white text-[10px] font-bold rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 whitespace-nowrap">
-      Menu Item
+    <div className="absolute left-full ml-4 px-2 py-1 bg-zinc-800 text-white text-[10px] font-bold rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 whitespace-nowrap border border-white/10">
+      {label}
     </div>
   </button>
 );
 
 const StatBox: React.FC<{ label: string; value: string; subValue: string; color: 'emerald' | 'rose' | 'blue' | 'purple' | 'zinc' | 'white' }> = ({ label, value, subValue, color }) => (
-  <div className="p-4 md:p-6 flex flex-col gap-1 border-r border-white/10 last:border-r-0 hover:bg-white/[0.01] transition-colors">
-    <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">{label}</span>
+  <div className="p-4 md:p-6 flex flex-col gap-1 border-r border-white/10 last:border-r-0 hover:bg-white/[0.01] transition-colors group">
+    <span className="text-[9px] font-black text-zinc-500 uppercase tracking-[0.2em] mb-1 group-hover:text-zinc-400 transition-colors">{label}</span>
     <p className={cn(
-      "text-lg md:text-2xl font-mono font-black tracking-tighter",
-      color === 'emerald' ? "text-emerald-400" : 
-      color === 'rose' ? "text-rose-400" : 
-      color === 'blue' ? "text-blue-400" : 
-      color === 'purple' ? "text-primary shadow-[0_0_15px_rgba(168,85,247,0.3)]" : 
+      "text-xl md:text-2xl font-black tracking-tighter",
+      color === 'emerald' ? "text-emerald-500 glow-emerald" : 
+      color === 'rose' ? "text-rose-500 glow-rose" : 
+      color === 'blue' ? "text-blue-500 glow-blue" : 
+      color === 'purple' ? "text-primary glow-purple" : 
       color === 'white' ? "text-white" : "text-zinc-100"
     )}>{value}</p>
     <div className="flex items-center gap-2 mt-1">
@@ -918,7 +923,7 @@ const StatBox: React.FC<{ label: string; value: string; subValue: string; color:
         color === 'rose' ? "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]" : 
         color === 'purple' ? "bg-primary animate-pulse shadow-[0_0_8px_rgba(168,85,247,0.5)]" : "bg-zinc-600"
       )} />
-      <span className="text-[9px] font-mono text-zinc-500 uppercase tracking-widest font-bold">{subValue}</span>
+      <span className="text-[8px] font-black text-zinc-600 uppercase tracking-widest">{subValue}</span>
     </div>
   </div>
 );

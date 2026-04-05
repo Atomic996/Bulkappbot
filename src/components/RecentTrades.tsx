@@ -6,8 +6,17 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export const RecentTrades: React.FC = () => {
-  const trades = [
+interface RecentTradesProps {
+  trades?: any[];
+}
+
+export const RecentTrades: React.FC<RecentTradesProps> = ({ trades = [] }) => {
+  const displayTrades = trades.length > 0 ? trades.map(t => ({
+    type: t.side === 'buy' ? 'Buy' : 'Sell',
+    price: t.price,
+    size: t.size,
+    time: new Date(t.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  })) : [
     { type: 'Buy', price: 177.500, size: 0.77, time: '168.03' },
     { type: 'Buy', price: 177.500, size: 0.72, time: '156.03' },
     { type: 'Sell', price: 177.500, size: 0.003, time: '156.03' },
@@ -31,7 +40,7 @@ export const RecentTrades: React.FC = () => {
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
-            {trades.map((trade, i) => (
+            {displayTrades.map((trade, i) => (
               <tr key={i} className="hover:bg-white/[0.02] transition-colors">
                 <td className={cn(
                   "px-4 py-2 font-black",

@@ -6,8 +6,19 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export const OrderBook: React.FC = () => {
-  const orders = [
+interface OrderBookProps {
+  trades?: any[];
+}
+
+export const OrderBook: React.FC<OrderBookProps> = ({ trades = [] }) => {
+  // Use real trades if available, otherwise fallback to mock for UI demo
+  const displayTrades = trades.length > 0 ? trades.map(t => ({
+    type: t.side === 'buy' ? 'Buy' : 'Sell',
+    price: t.price,
+    size: t.size,
+    time: new Date(t.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+    isBulk: true // In this app, we highlight these as bulk
+  })) : [
     { type: 'Buy', price: 67340.01, size: 0.420, time: '18:50:30', isBulk: true },
     { type: 'Sell', price: 67345.50, size: 1.246, time: '18:50:28', isBulk: true },
     { type: 'Sell', price: 67338.20, size: 0.826, time: '18:50:25', isBulk: false },
@@ -36,7 +47,7 @@ export const OrderBook: React.FC = () => {
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
-            {orders.map((order, i) => (
+            {displayTrades.map((order, i) => (
               <tr key={i} className={cn(
                 "hover:bg-white/[0.03] transition-colors group",
                 order.isBulk && "bg-primary/[0.02]"

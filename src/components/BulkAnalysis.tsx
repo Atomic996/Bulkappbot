@@ -44,7 +44,7 @@ interface WalletState {
   lastUpdate: number;
 }
 
-const BACKEND_URL = "https://bulkappbot-production.up.railway.app";
+const RAILWAY_BACKEND_URL = "https://bulkappbot-production.up.railway.app";
 const BACKEND_WS_URL = "wss://bulkappbot-production.up.railway.app";
 
 const STORAGE_KEY_TRADES = 'sentinel_bulk_trades';

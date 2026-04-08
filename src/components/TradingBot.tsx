@@ -42,7 +42,7 @@ interface BotStatus {
   orderType?: 'market' | 'limit' | 'auto';
 }
 
-const BACKEND_URL = typeof window !== 'undefined' ? window.location.origin : "";
+const RAILWAY_BACKEND_URL = "https://bulkappbot-production.up.railway.app";
 
 export const TradingBot: React.FC = () => {
   const { publicKey, signMessage, connected, disconnect } = useWallet();
@@ -86,7 +86,7 @@ export const TradingBot: React.FC = () => {
   }, []);
 
   React.useEffect(() => {
-    const wsUrl = (BACKEND_URL || window.location.origin).replace('http', 'ws') + '/ws/bulk';
+    const wsUrl = RAILWAY_BACKEND_URL.replace('http', 'ws') + '/ws/bulk';
     const ws = new WebSocket(wsUrl);
     
     ws.onopen = () => console.log("[WS] Connected to backend");
@@ -116,7 +116,7 @@ export const TradingBot: React.FC = () => {
         }
       }
 
-      const res = await axios.get(`${BACKEND_URL}/api/bot/status`);
+      const res = await axios.get(`${RAILWAY_BACKEND_URL}/api/bot/status`);
       if (res.data && typeof res.data === 'object') {
         setStatus(prev => ({
           ...prev,
@@ -172,7 +172,7 @@ export const TradingBot: React.FC = () => {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await axios.post(`${BACKEND_URL}/api/bot/toggle`);
+      const res = await axios.post(`${RAILWAY_BACKEND_URL}/api/bot/toggle`);
       if (res.data.error) {
         setError(res.data.error);
       } else {
@@ -192,7 +192,7 @@ export const TradingBot: React.FC = () => {
       const currentIndex = types.indexOf(status.orderType || 'auto');
       const nextType = types[(currentIndex + 1) % types.length];
       
-      const r = await axios.post(`${BACKEND_URL}/api/bot/settings`, { orderType: nextType });
+      const r = await axios.post(`${RAILWAY_BACKEND_URL}/api/bot/settings`, { orderType: nextType });
       if (r.data.success) {
         setStatus(prev => ({ ...prev, orderType: r.data.orderType }));
       }
@@ -206,7 +206,7 @@ export const TradingBot: React.FC = () => {
     setError(null);
     try {
       // 1. Tell backend to clear session
-      await axios.post(`${BACKEND_URL}/api/bot/auth/logout`);
+      await axios.post(`${RAILWAY_BACKEND_URL}/api/bot/auth/logout`);
       
       // 2. Disconnect wallet locally
       disconnect();
@@ -266,7 +266,7 @@ export const TradingBot: React.FC = () => {
       const finalized = prepared.finalize(signature);
       
       // 5. Submit to backend
-      await axios.post(`${BACKEND_URL}/api/bot/auth/agent`, {
+      await axios.post(`${RAILWAY_BACKEND_URL}/api/bot/auth/agent`, {
         address: publicKey.toBase58(),
         agentPubKey,
         agentPrivKey,
@@ -295,7 +295,7 @@ export const TradingBot: React.FC = () => {
       const address = publicKey.toBase58();
       
       // 1. Init SIWS
-      const initRes = await axios.post(`${BACKEND_URL}/api/bot/auth/init`, { address });
+      const initRes = await axios.post(`${RAILWAY_BACKEND_URL}/api/bot/auth/init`, { address });
       const { message } = initRes.data;
       
       // 2. Sign Message
@@ -304,7 +304,7 @@ export const TradingBot: React.FC = () => {
       const signature = bs58.encode(signatureBytes);
       
       // 3. Start Session
-      const startRes = await axios.post(`${BACKEND_URL}/api/bot/auth/start`, {
+      const startRes = await axios.post(`${RAILWAY_BACKEND_URL}/api/bot/auth/start`, {
         address,
         message,
         signature
@@ -327,7 +327,7 @@ export const TradingBot: React.FC = () => {
     setIsLoading(true);
     setError(null);
     try {
-      await axios.post(`${BACKEND_URL}/api/bot/trade`, {
+      await axios.post(`${RAILWAY_BACKEND_URL}/api/bot/trade`, {
         ...manualTrade,
         size: parseFloat(manualTrade.size),
         price: parseFloat(manualTrade.price)
@@ -344,7 +344,7 @@ export const TradingBot: React.FC = () => {
     setIsLoading(true);
     setError(null);
     try {
-      await axios.post(`${BACKEND_URL}/api/bot/close`, { symbol, size, side });
+      await axios.post(`${RAILWAY_BACKEND_URL}/api/bot/close`, { symbol, size, side });
       fetchStatus();
     } catch (err: any) {
       setError(err.response?.data?.error || "Close failed");

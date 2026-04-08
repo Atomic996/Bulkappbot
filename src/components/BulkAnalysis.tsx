@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import * as React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Trophy, 
@@ -51,19 +51,19 @@ const STORAGE_KEY_TRADES = 'sentinel_bulk_trades';
 const STORAGE_KEY_WALLETS = 'sentinel_bulk_wallets';
 
 export const BulkAnalysis: React.FC = () => {
-  const [trades, setTrades] = useState<BulkTrade[]>(() => {
+  const [trades, setTrades] = React.useState<BulkTrade[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEY_TRADES);
     return saved ? JSON.parse(saved) : [];
   });
-  const [wallets, setWallets] = useState<Record<string, WalletState>>(() => {
+  const [wallets, setWallets] = React.useState<Record<string, WalletState>>(() => {
     const saved = localStorage.getItem(STORAGE_KEY_WALLETS);
     return saved ? JSON.parse(saved) : {};
   });
-  const [isConnected, setIsConnected] = useState(true);
-  const [lastSync, setLastSync] = useState<number>(Date.now());
+  const [isConnected, setIsConnected] = React.useState(true);
+  const [lastSync, setLastSync] = React.useState<number>(Date.now());
 
   // 1. Simulation Engine (Directly on Client)
-  useEffect(() => {
+  React.useEffect(() => {
     const symbols = ['BTC', 'ETH', 'SOL'];
     const interval = setInterval(() => {
       const symbol = symbols[Math.floor(Math.random() * symbols.length)];
@@ -133,13 +133,13 @@ export const BulkAnalysis: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  const topTraders = useMemo(() => {
+  const topTraders = React.useMemo(() => {
     return (Object.values(wallets) as WalletState[])
       .sort((a, b) => b.totalPnL - a.totalPnL)
       .slice(0, 10);
   }, [wallets]);
 
-  const marketStats = useMemo(() => {
+  const marketStats = React.useMemo(() => {
     const activePositions = (Object.values(wallets) as WalletState[]).filter(w => w.position !== 'flat');
     const longs = activePositions.filter(w => w.position === 'long').length;
     const shorts = activePositions.filter(w => w.position === 'short').length;

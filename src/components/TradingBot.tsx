@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import * as React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useWalletModal } from '@solana/wallet-adapter-react-ui';
@@ -44,7 +44,7 @@ const BACKEND_URL = typeof window !== 'undefined' ? window.location.origin : "";
 export const TradingBot: React.FC = () => {
   const { publicKey, signMessage, connected, disconnect } = useWallet();
   const { setVisible } = useWalletModal();
-  const [status, setStatus] = useState<BotStatus>(() => {
+  const [status, setStatus] = React.useState<BotStatus>(() => {
     // Initial state from localStorage to prevent flicker
     const saved = typeof window !== 'undefined' ? localStorage.getItem('bot_has_session') : null;
     return {
@@ -57,10 +57,10 @@ export const TradingBot: React.FC = () => {
       address: typeof window !== 'undefined' ? localStorage.getItem('bot_address') : null
     };
   });
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
 
-  useEffect(() => {
+  React.useEffect(() => {
     const wsUrl = (BACKEND_URL || window.location.origin).replace('http', 'ws') + '/ws/bulk';
     const ws = new WebSocket(wsUrl);
     
@@ -81,7 +81,7 @@ export const TradingBot: React.FC = () => {
     return () => ws.close();
   }, []);
 
-  const fetchStatus = useCallback(async () => {
+  const fetchStatus = React.useCallback(async () => {
     try {
       // Debug log for fetch
       if (typeof window !== 'undefined') {
@@ -126,7 +126,7 @@ export const TradingBot: React.FC = () => {
     }
   }, []);
 
-  useEffect(() => {
+  React.useEffect(() => {
     fetchStatus();
     const interval = setInterval(fetchStatus, 5000);
     return () => clearInterval(interval);

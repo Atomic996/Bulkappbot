@@ -18,8 +18,8 @@ import { NewsItem } from "./src/types.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const BULK_WS_URL = "wss://exchange-ws1.bulk.trade";
-const BULK_API_URL = "https://api.early.bulk.trade"; // Added API URL for HTTP fallbacks
+const BULK_WS_URL = "wss://api.early.bulk.trade/ws";
+const BULK_API_URL = "https://api.early.bulk.trade";
 const ORIGIN_URL = "https://early.bulk.trade";
 const PRIVY_APP_ID = "cmbuls93q01jol20lf0ak0plb";
 const PRIVY_URL = "https://auth.privy.io/api/v1";
@@ -438,6 +438,7 @@ class BulkClient {
       });
 
       const r_auth_data = await r_auth_res.json() as any;
+      console.log("[Auth] Privy Response:", JSON.stringify(r_auth_data).slice(0, 200));
       console.log("[Auth] Privy Response Success:", r_auth_data.token ? "Token Received" : "No Token");
 
       if (!r_auth_data.token) {
@@ -482,19 +483,36 @@ class BulkClient {
       return;
     }
 
-    console.log(`[BulkWS] Connecting to ${BULK_WS_URL} for ${this.address}...`);
+    const tokenPreview = this.token ? `${this.token.slice(0, 10)}...${this.token.slice(-10)}` : "null";
+    console.log(`[BulkWS] Connecting to ${BULK_WS_URL} for ${this.address} with token ${tokenPreview}`);
     addBotLog("Connecting to Exchange...");
 
     this.ws = new WebSocket(BULK_WS_URL, { 
       headers: { 
         "Authorization": `Bearer ${this.token}`, 
         "Origin": ORIGIN_URL,
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
       } 
     });
 
+    // Add a ping interval to keep connection alive
+    const pingInterval = setInterval(() => {
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        this.ws.ping();
+      }
+    }, 30000);
+
+    this.ws.on("unexpected-response", (req, res) => {
+      console.error(`[BulkWS] Unexpected response: ${res.statusCode} ${res.statusMessage}`);
+      addBotLog(`❌ Connection Rejected: ${res.statusCode} ${res.statusMessage}`);
+      
+      if (res.statusCode === 401 || res.statusCode === 403) {
+        addBotLog("⚠️ Authentication failed. Your session might be invalid.");
+      }
+    });
+
     this.ws.on("open", () => {
-      console.log(`[BulkWS] Connected successfully for ${this.address}`);
+      console.log(`[BulkWS] Connected successfully to ${BULK_WS_URL}`);
       this.ws?.send(JSON.stringify({ 
         method: "subscribe", 
         id: 1, 
@@ -561,6 +579,7 @@ class BulkClient {
 
     this.ws.on("close", () => { 
       console.log("[BulkWS] Connection closed.");
+      clearInterval(pingInterval);
       broadcast({ type: "bot_update", data: { exchangeConnected: false } });
       // Auto-reconnect if session is still active
       if (this.token) {

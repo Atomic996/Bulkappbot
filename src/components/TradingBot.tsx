@@ -260,7 +260,11 @@ export const TradingBot: React.FC = () => {
       
       // 3. Request signature from user's wallet
       const signatureBytes = await signMessage(prepared.messageBytes);
-      const signature = bs58.encode(signatureBytes);
+      const signature = bs58.encode(
+        signatureBytes instanceof Uint8Array
+          ? signatureBytes
+          : new Uint8Array(Object.values(signatureBytes as any))
+      );
       
       // 4. Finalize the authorization
       const finalized = prepared.finalize(signature);
@@ -275,7 +279,10 @@ export const TradingBot: React.FC = () => {
       
       localStorage.setItem('bot_agent_privkey', agentPrivKey);
       
-      // 6. Now proceed to SIWS to get the session token
+      // 6. Wait a bit before SIWS to ensure agent is saved on server
+      await new Promise(r => setTimeout(r, 500));
+      
+      // 7. Now start SIWS independently
       await startSIWS();
       
     } catch (err: any) {
@@ -301,7 +308,13 @@ export const TradingBot: React.FC = () => {
       // 2. Sign Message
       const encodedMessage = new TextEncoder().encode(message);
       const signatureBytes = await signMessage(encodedMessage);
-      const signature = bs58.encode(signatureBytes);
+      
+      // Correct conversion for bs58 v6
+      const signature = bs58.encode(
+        signatureBytes instanceof Uint8Array
+          ? signatureBytes
+          : new Uint8Array(Object.values(signatureBytes as any))
+      );
       
       // 3. Start Session
       const startRes = await axios.post(`${RAILWAY_BACKEND_URL}/api/bot/auth/start`, {

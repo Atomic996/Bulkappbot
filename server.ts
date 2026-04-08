@@ -563,88 +563,66 @@ class BulkClient {
   }
 
   async placeBracketOrder(symbol: string, side: 'buy' | 'sell', size: number, entryPrice: number, slPrice: number, tpPrice: number) {
-    const formattedSize = symbol.startsWith("BTC") ? size.toFixed(4) : size.toFixed(2);
-    
-    // 1. Entry Order
-    const entryParams = {
-      b: side === 'buy',
-      c: symbol,
-      r: false,
-      sz: formattedSize,
-      p: entryPrice.toString(),
-      tif: "gtc"
-    };
+    const actions = [
+      {
+        type: 'order',
+        symbol,
+        isBuy: side === 'buy',
+        price: entryPrice,
+        size,
+        orderType: { type: 'limit', tif: 'GTC' }
+      },
+      {
+        type: 'stop',
+        symbol,
+        isBuy: side === 'sell',
+        size,
+        triggerPrice: slPrice,
+        limitPrice: slPrice // Market-style trigger if same as trigger
+      },
+      {
+        type: 'takeProfit',
+        symbol,
+        isBuy: side === 'sell',
+        size,
+        triggerPrice: tpPrice,
+        limitPrice: tpPrice
+      }
+    ];
 
-    // 2. Stop Loss (Reduce Only Trigger)
-    // Note: In Bulk/HL, triggers often use a different format, but based on the user's request
-    // we are sending them together in one transaction.
-    const slParams = {
-      b: side === 'sell',
-      c: symbol,
-      r: true,
-      sz: formattedSize,
-      p: slPrice.toString(),
-      tif: "gtc",
-      isTrigger: true,
-      triggerPx: slPrice.toString(),
-      triggerType: "stopLoss"
-    };
-
-    // 3. Take Profit (Reduce Only Trigger)
-    const tpParams = {
-      b: side === 'sell',
-      c: symbol,
-      r: true,
-      sz: formattedSize,
-      p: tpPrice.toString(),
-      tif: "gtc",
-      isTrigger: true,
-      triggerPx: tpPrice.toString(),
-      triggerType: "takeProfit"
-    };
-
-    await this.sendActions([
-      { m: entryParams },
-      { m: slParams },
-      { m: tpParams }
-    ]);
-    
-    addBotLog(`🚀 Bracket Order Sent for ${symbol} | Size: ${formattedSize}`);
+    await this.sendActions(actions);
+    addBotLog(`🚀 Bracket Order Sent for ${symbol} | Size: ${size}`);
     addBotLog(`   Entry: ${entryPrice.toFixed(2)} | SL: ${slPrice.toFixed(2)} | TP: ${tpPrice.toFixed(2)}`);
   }
 
   async placeOrder(symbol: string, side: 'buy' | 'sell', size: number, price: number = 0, typeOverride?: 'market' | 'limit') {
-    const formattedSize = symbol.startsWith("BTC") ? size.toFixed(4) : size.toFixed(2);
-    const params: any = {
-      b: side === 'buy',
-      c: symbol,
-      r: false,
-      sz: formattedSize
-    };
     const finalType = typeOverride || botOrderType;
-    if (finalType === 'limit' && price > 0) {
-      params.p = price.toString();
-      params.tif = "gtc";
-    } else {
-      params.p = "0";
-      params.tif = "ioc";
-    }
-    const typeLabel = finalType === 'auto' ? 'AUTO' : finalType.toUpperCase();
-    await this.sendActions([{ m: params }]);
-    addBotLog(`Placed ${typeLabel} ${side.toUpperCase()} order for ${symbol} | Size: ${formattedSize}${params.p !== "0" ? ` | Price: ${price}` : ''}`);
+    const action = {
+      type: 'order',
+      symbol,
+      isBuy: side === 'buy',
+      price: finalType === 'limit' ? price : 0,
+      size,
+      orderType: finalType === 'limit' 
+        ? { type: 'limit', tif: 'GTC' } 
+        : { type: 'market', isMarket: true, triggerPx: 0 }
+    };
+
+    const typeLabel = finalType.toUpperCase();
+    await this.sendActions([action]);
+    addBotLog(`Placed ${typeLabel} ${side.toUpperCase()} order for ${symbol} | Size: ${size}${price > 0 ? ` | Price: ${price}` : ''}`);
   }
 
   async closePosition(symbol: string, size: number, side: string) {
-    const formattedSize = symbol.startsWith("BTC") ? Math.abs(size).toFixed(4) : Math.abs(size).toFixed(2);
-    const params = {
-      b: side === 'short',
-      c: symbol,
-      r: true,
-      sz: formattedSize,
-      p: "0",
-      tif: "ioc"
+    const action = {
+      type: 'order',
+      symbol,
+      isBuy: side === 'short', // Buy to close short, Sell to close long
+      price: 0,
+      size: Math.abs(size),
+      orderType: { type: 'market', isMarket: true, triggerPx: 0 }
     };
-    await this.sendActions([{ m: params }]);
+    await this.sendActions([action]);
     addBotLog(`Closing ${side.toUpperCase()} position for ${symbol}`);
   }
 
@@ -707,35 +685,15 @@ const runAutoTrader = async () => {
         ? { size: parseFloat(pos.size), entryPrice: parseFloat(pos.price) } 
         : null;
 
-      // --- News Analysis with AI Fallback ---
-      const rawNews = await fetchNewsInternal(sym);
-      let newsScore = 0;
-      let usingAI = false;
-
-      if (rawNews.length > 0) {
-        try {
-          // Try AI Analysis first
-          const analyzedAI = await analyzeNews(rawNews);
-          newsScore = calculateNewsScore(analyzedAI);
-          usingAI = true;
-        } catch (err) {
-          // Fallback to Algorithmic Analysis if AI fails (quota/error)
-          const analyzedAlgo = analyzeSentimentAlgorithmic(rawNews);
-          newsScore = calculateAlgorithmicNewsScore(analyzedAlgo);
-          usingAI = false;
-          console.warn(`[Bot] AI Analysis failed for ${sym}, falling back to algorithmic sentiment. Error: ${err instanceof Error ? err.message : String(err)}`);
-        }
-      }
-
-      const decision = getTradeDecision(history, botBalance, symbol, currentPosition, newsScore);
+      // --- Pure Algorithmic Analysis (No AI) ---
+      const decision = getTradeDecision(history, botBalance, symbol, currentPosition, 0); // newsScore = 0
       const currentPrice = history[history.length - 1].close;
       const ind = computeIndicators(history);
       
-      // Log the decision with the regime and strategy info from our custom algorithm
-      addBotLog(`📊 ${sym} | ${decision.regime} | [${decision.strategy}] | Score: ${decision.score.toFixed(0)} | → ${decision.action} ${usingAI ? '(AI)' : '(Algo)'}`);
+      addBotLog(`📊 ${sym} | ${decision.regime} | [${decision.strategy}] | Score: ${decision.score.toFixed(0)} | → ${decision.action}`);
       if (decision.reason) addBotLog(`   ${decision.reason}`);
 
-      // 1. Correlation Check: Don't open a new trade if we already have a trade in the same direction for another asset
+      // 1. Correlation Check
       const sameDirectionTrade = botPositions.find(p => {
         const pSize = parseFloat(p.size);
         if (decision.action === 'BUY' && pSize > 0 && p.symbol !== symbol) return true;
@@ -748,21 +706,7 @@ const runAutoTrader = async () => {
         continue;
       }
 
-      // 2. Smart Trailing Stop Logic (Server-side monitoring)
-      if (currentPosition && currentPosition.size !== 0) {
-        const isLong = currentPosition.size > 0;
-        const entryPrice = currentPosition.entryPrice;
-        const profitPct = isLong ? (currentPrice - entryPrice) / entryPrice : (entryPrice - currentPrice) / entryPrice;
-        
-        // Trailing Stop: If profit > 1x ATR, we "trail" the SL to entry price (Break-even)
-        const atrPct = ind.atr / currentPrice;
-        if (profitPct > atrPct) {
-          addBotLog(`🛡️ ${sym} Trailing Stop: Moving SL to Break-even (${entryPrice.toFixed(2)})`);
-          // In a real scenario, we would call cancelOrder + placeOrder for the SL trigger
-        }
-      }
-
-      // 3. Balance Check before entry
+      // 2. Balance Check
       if ((decision.action === 'BUY' || decision.action === 'SELL') && !currentPosition) {
         if (botBalance < 10) {
           addBotLog(`⚠️ Insufficient balance ($${botBalance.toFixed(2)}) to open ${sym}.`);
@@ -797,7 +741,6 @@ const runAutoTrader = async () => {
           if (currentPosition) await bulkClient.closePosition(symbol, currentPosition.size, "short");
           break;
         default:
-          // HOLD - do nothing
           break;
       }
     } catch (err: any) {

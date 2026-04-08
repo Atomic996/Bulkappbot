@@ -161,7 +161,7 @@ botRouter.post("/auth/init", async (req: Request, res: Response) => {
     
     const r_init_data = await r_init_res.json() as any;
     const nonce = r_init_data.nonce;
-    const ts = new Date().toISOString().replace(".000Z", "Z");
+    const ts = new Date().toISOString(); // keep full ISO format with milliseconds
     
     // 2. Generate a temporary session key for the bot
     const sessionKeypair = new WasmKeypair();
@@ -179,13 +179,14 @@ botRouter.post("/auth/init", async (req: Request, res: Response) => {
       `Issued At: ${ts}\n` +
       `Resources:\n- https://privy.io`;
 
-    // 4. Store session data in memory (Railway is persistent)
-    pendingSessions.set(address, {
-      message,
-      sessionPrivKey,
-      timestamp: Date.now()
-    });
-    
+    // 4. Store session in memory AND on disk (survives restarts)
+    const sessionData = { message, sessionPrivKey, timestamp: Date.now() };
+    pendingSessions.set(address, sessionData);
+
+    // Save to disk - used if server restarts before signing
+    const existing = loadSession() || {};
+    saveSession({ ...existing, pendingSession: { address, ...sessionData } });
+
     console.log(`[Auth] Message generated and stored for ${address}`);
     res.json({ nonce, message });
   } catch (err: any) {
@@ -397,6 +398,7 @@ class BulkClient {
   
   setToken(token: string) { this.token = token; }
   setAddress(address: string) { this.address = address; botAddress = address; }
+  isConnected() { return this.ws !== null && this.ws.readyState === WebSocket.OPEN; }
 
   isWsConnected() {
     return this.ws && this.ws.readyState === WebSocket.OPEN;
@@ -856,13 +858,34 @@ async function startServer() {
     console.error("[WASM] Failed to initialize:", e);
   }
 
-  // Try to restore session on startup
+  // --- RESTORE SESSION ON STARTUP ---
   const savedSession = loadSession();
   if (savedSession) {
+    // 1. Restore pending session if user was in middle of signing
+    if (savedSession.pendingSession) {
+      const ps = savedSession.pendingSession;
+      const age = Date.now() - ps.timestamp;
+      // Valid for 10 mins only
+      if (age < 10 * 60 * 1000) {
+        pendingSessions.set(ps.address, {
+          message: ps.message,
+          sessionPrivKey: ps.sessionPrivKey,
+          timestamp: ps.timestamp
+        });
+        console.log(`[Bot] Restored pending session for ${ps.address.slice(0, 6)}... (${Math.ceil(age/1000)}s old)`);
+      } else {
+        console.log("[Bot] Pending session expired, skipping restore");
+        const cleaned = { ...savedSession };
+        delete cleaned.pendingSession;
+        saveSession(cleaned);
+      }
+    }
+
+    // 2. Restore active BulkClient
     console.log("[Bot] Found saved session for:", savedSession.address);
     try {
       const keyStr = savedSession.agentPrivKey || savedSession.sessionPrivKey;
-      if (keyStr) {
+      if (keyStr && savedSession.token) {
         const keypair = WasmKeypair.fromBase58(keyStr);
         bulkClient = new BulkClient(keypair);
         bulkClient.setToken(savedSession.token);
@@ -870,7 +893,21 @@ async function startServer() {
         bulkClient.connect();
         botEnabled = savedSession.botEnabled ?? true;
         botStatus = botEnabled ? "Monitoring" : "Idle";
-        addBotLog(`Bot Session Restored for ${savedSession.address.slice(0, 6)}...`);
+        addBotLog(`Session Restored for ${savedSession.address.slice(0, 6)}...`);
+
+        // Check if token is still valid after 30s
+        setTimeout(async () => {
+          if (!bulkClient || !bulkClient.isConnected()) {
+            console.log("[Bot] Restored token expired, clearing session");
+            addBotLog("Session token expired — please re-authorize.");
+            bulkClient = null;
+            botEnabled = false;
+            botStatus = "Idle";
+            const s = loadSession() || {};
+            delete s.token;
+            saveSession(s);
+          }
+        }, 30000);
       }
     } catch (e) {
       console.error("Failed to restore session:", e);

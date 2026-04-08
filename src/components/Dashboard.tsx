@@ -280,8 +280,51 @@ export const Dashboard: React.FC = () => {
   const currentHistory = useMemo(() => historicalData[selectedSymbol] || [], [historicalData, selectedSymbol]);
   const currentNews = useMemo(() => news[selectedSymbol] || [], [news, selectedSymbol]);
 
-  const { publicKey, connected, disconnect } = useWallet();
+  const { publicKey, connected, disconnect, signMessage } = useWallet();
   const { setVisible } = useWalletModal();
+
+  const [isAuthorizing, setIsAuthorizing] = useState(false);
+
+  const handleSignMessage = useCallback(async () => {
+    if (!connected || !publicKey || !signMessage) return;
+    
+    try {
+      const BACKEND_URL = window.location.origin;
+      // 1. Get SIWS message from server
+      const siwsRes = await axios.post(`${BACKEND_URL}/api/bot/auth/init`, { address: publicKey.toBase58() });
+      const { message } = siwsRes.data;
+
+      // 2. Sign the message
+      const encodedMessage = new TextEncoder().encode(message);
+      const signed = await signMessage(encodedMessage);
+      
+      // Convert signature to base64
+      const signatureBase64 = btoa(String.fromCharCode.apply(null, Array.from(signed)));
+
+      // 3. Send signature back to server
+      await axios.post(`${BACKEND_URL}/api/bot/auth/start`, {
+        address: publicKey.toBase58(),
+        message,
+        signature: signatureBase64
+      });
+      
+      // Persist session state
+      localStorage.setItem('bot_has_session', 'true');
+      localStorage.setItem('bot_address', publicKey.toBase58());
+      
+      // Refresh to ensure all components pick up the session
+      window.location.reload();
+    } catch (err: any) {
+      console.error("[Auth] Signature failed:", err);
+      setIsAuthorizing(false);
+    }
+  }, [connected, publicKey, signMessage]);
+
+  useEffect(() => {
+    if (connected && isAuthorizing) {
+      handleSignMessage();
+    }
+  }, [connected, isAuthorizing, handleSignMessage]);
 
   return (
     <div className="min-h-screen bg-[#050505] text-zinc-100 font-sans selection:bg-blue-500/30 flex flex-col overflow-hidden">

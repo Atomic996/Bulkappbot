@@ -8,6 +8,7 @@ import axios from "axios";
 import fetch from "node-fetch";
 import nacl from "tweetnacl";
 import bs58 from "bs58";
+import init, { WasmKeypair, WasmSigner } from "bulk-keychain-wasm";
 import { computeIndicators, calculateTechnicalScore, getTradeDecision, RISK_CONFIG } from "./src/lib/indicators.js";
 import { fetchHistoricalData } from "./src/lib/api.js";
 import { analyzeNews, calculateNewsScore } from "./src/lib/gemini.js";
@@ -87,6 +88,47 @@ botRouter.post("/settings", (req: Request, res: Response) => {
   }
 });
 
+botRouter.post("/auth/agent", async (req: Request, res: Response) => {
+  const { address, agentPubKey, agentPrivKey, finalized } = req.body;
+  if (!address || !agentPubKey || !agentPrivKey || !finalized) {
+    return res.status(400).json({ error: "Missing required fields" });
+  }
+
+  try {
+    console.log(`[Auth] Authorizing Agent for: ${address}`);
+    
+    // 1. Initialize BulkClient with the Agent Keypair
+    const agentKeypair = WasmKeypair.fromBase58(agentPrivKey);
+    bulkClient = new BulkClient(agentKeypair);
+    
+    // 2. We need a token to connect to the WS. 
+    // For now, we'll assume the user still needs to go through the SIWS flow 
+    // OR we can use the agent authorization to get a session.
+    // However, BULK usually requires a session token.
+    
+    // If we already have a bulkClient from SIWS, we just update its signer.
+    // If not, we might need to wait for SIWS.
+    
+    // Let's store the agent info in the session
+    botAddress = address;
+    
+    // Persist agent info
+    const currentSession = loadSession() || {};
+    saveSession({
+      ...currentSession,
+      address,
+      agentPrivKey,
+      botEnabled: true
+    });
+
+    addBotLog(`Agent Authorized: ${agentPubKey.slice(0, 6)}...`);
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("[Auth] Agent Auth Error:", err.message);
+    res.status(500).json({ error: "Agent Authorization Failed", message: err.message });
+  }
+});
+
 botRouter.post("/auth/init", async (req: Request, res: Response) => {
   const { address } = req.body;
   if (!address) return res.status(400).json({ error: "Address is required" });
@@ -113,9 +155,9 @@ botRouter.post("/auth/init", async (req: Request, res: Response) => {
     const ts = new Date().toISOString().replace(".000Z", "Z");
     
     // 2. Generate a temporary session key for the bot
-    const sessionKeyPair = nacl.sign.keyPair();
-    const sessionPubKey = bs58.encode(sessionKeyPair.publicKey);
-    const sessionPrivKey = bs58.encode(sessionKeyPair.secretKey);
+    const sessionKeypair = new WasmKeypair();
+    const sessionPubKey = sessionKeypair.pubkey;
+    const sessionPrivKey = sessionKeypair.toBase58();
 
     // 3. Build the SIWS message (Exact format required by Privy)
     const message = 
@@ -162,8 +204,8 @@ botRouter.post("/auth/start", async (req: Request, res: Response) => {
     bulkClient?.stop();
   }
 
-  const sessionKeyPair = nacl.sign.keyPair.fromSecretKey(bs58.decode(sessionData.sessionPrivKey));
-  bulkClient = new BulkClient(sessionKeyPair);
+  const agentKeypair = WasmKeypair.fromBase58(sessionData.sessionPrivKey);
+  bulkClient = new BulkClient(agentKeypair);
   const ok = await bulkClient.authenticate(address, message, signature);
   
   if (ok) {
@@ -179,7 +221,7 @@ botRouter.post("/auth/start", async (req: Request, res: Response) => {
     saveSession({
       address,
       token: bulkClient.getToken(),
-      sessionPrivKey: bs58.encode(sessionKeyPair.secretKey),
+      sessionPrivKey: sessionData.sessionPrivKey,
       botEnabled: true
     });
 
@@ -314,10 +356,10 @@ class BulkClient {
   private ws: WebSocket | null = null;
   private token: string | null = null;
   private address: string | null = null;
-  private sessionKeyPair: nacl.SignKeyPair;
+  private signer: WasmSigner;
 
-  constructor(sessionKeyPair: nacl.SignKeyPair) {
-    this.sessionKeyPair = sessionKeyPair;
+  constructor(keypair: WasmKeypair) {
+    this.signer = new WasmSigner(keypair);
   }
 
   getToken() { return this.token; }
@@ -381,7 +423,13 @@ class BulkClient {
     this.token = data.token;
     this.address = data.address;
     botAddress = data.address;
-    this.sessionKeyPair = nacl.sign.keyPair.fromSecretKey(bs58.decode(data.sessionPrivKey));
+    if (data.agentPrivKey) {
+      const agentKeypair = WasmKeypair.fromBase58(data.agentPrivKey);
+      this.signer = new WasmSigner(agentKeypair);
+    } else if (data.sessionPrivKey) {
+      const sessionKeypair = WasmKeypair.fromBase58(data.sessionPrivKey);
+      this.signer = new WasmSigner(sessionKeypair);
+    }
     return true;
   }
 
@@ -433,38 +481,31 @@ class BulkClient {
 
   async sendActions(actions: any[]) {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-    const ts = Date.now();
     
-    const payload = {
-      account: this.address,
-      actions: actions,
-      nonce: ts,
-      type: "action"
-    };
-
-    const payloadJson = JSON.stringify(payload, null, 0).replace(/\s/g, '');
-
-    const signatureBytes = nacl.sign.detached(
-      Buffer.from(payloadJson),
-      this.sessionKeyPair.secretKey
-    );
-    const signature = bs58.encode(signatureBytes);
-    const signer = bs58.encode(this.sessionKeyPair.publicKey);
-
-    const msg = {
-      method: "post",
-      id: ts,
-      request: {
-        type: "action",
-        payload: {
-          ...payload,
-          signature,
-          signer
+    try {
+      // Use bulk-keychain for signing
+      const signed = this.signer.signGroup(actions);
+      
+      const msg = {
+        method: "post",
+        id: Date.now(),
+        request: {
+          type: "action",
+          payload: {
+            actions: JSON.parse(signed.actions),
+            nonce: signed.nonce,
+            account: this.address,
+            signer: signed.signer,
+            signature: signed.signature
+          }
         }
-      }
-    };
-    
-    this.ws.send(JSON.stringify(msg));
+      };
+      
+      this.ws.send(JSON.stringify(msg));
+    } catch (e) {
+      console.error("[BulkClient] Signing Error:", e);
+      addBotLog(`❌ Signing Error: ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
 
   async setLeverage(symbol: string, leverage: number) {
@@ -720,13 +761,21 @@ setInterval(runAutoTrader, 5 * 60 * 1000);
 
 // --- SERVER START ---
 async function startServer() {
+  // Initialize WASM
+  try {
+    await init();
+    console.log("[WASM] bulk-keychain initialized");
+  } catch (e) {
+    console.error("[WASM] Failed to initialize:", e);
+  }
+
   // Try to restore session on startup
   const savedSession = loadSession();
   if (savedSession) {
     console.log("[Bot] Found saved session for:", savedSession.address);
     try {
-      const sessionKeyPair = nacl.sign.keyPair.fromSecretKey(bs58.decode(savedSession.sessionPrivKey));
-      bulkClient = new BulkClient(sessionKeyPair);
+      const sessionKeypair = WasmKeypair.fromBase58(savedSession.sessionPrivKey);
+      bulkClient = new BulkClient(sessionKeypair);
       bulkClient.setToken(savedSession.token);
       bulkClient.setAddress(savedSession.address);
       bulkClient.connect();

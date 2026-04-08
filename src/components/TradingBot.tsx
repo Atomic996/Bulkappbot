@@ -18,11 +18,13 @@ import {
   ChevronRight,
   Lock,
   Zap,
-  Info
+  Info,
+  UserCheck
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import bs58 from 'bs58';
+import init, { WasmKeypair, prepareAgentWallet } from 'bulk-keychain-wasm';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -59,6 +61,19 @@ export const TradingBot: React.FC = () => {
   });
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [isWasmReady, setIsWasmReady] = React.useState(false);
+
+  React.useEffect(() => {
+    const initWasm = async () => {
+      try {
+        await init();
+        setIsWasmReady(true);
+      } catch (e) {
+        console.error("Failed to initialize bulk-keychain WASM:", e);
+      }
+    };
+    initWasm();
+  }, []);
 
   React.useEffect(() => {
     const wsUrl = (BACKEND_URL || window.location.origin).replace('http', 'ws') + '/ws/bulk';
@@ -202,12 +217,62 @@ export const TradingBot: React.FC = () => {
         localStorage.removeItem('walletName');
         localStorage.removeItem('bot_has_session');
         localStorage.removeItem('bot_address');
+        localStorage.removeItem('bot_agent_privkey');
       }
     } catch (err) {
       console.error("Logout error:", err);
       // Fallback: still disconnect locally
       disconnect();
       setStatus(prev => ({ ...prev, hasSession: false }));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const authorizeAgent = async () => {
+    if (!connected || !publicKey || !signMessage || !isWasmReady) return;
+    
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      // 1. Generate a new Agent Keypair
+      const agentKeypair = new WasmKeypair();
+      const agentPubKey = agentKeypair.pubkey;
+      const agentPrivKey = agentKeypair.toBase58();
+      
+      // 2. Prepare the Agent Authorization message
+      const prepared = prepareAgentWallet(agentPubKey, false, {
+        account: publicKey.toBase58(),
+        signer: publicKey.toBase58(),
+        nonce: Date.now()
+      });
+      
+      // 3. Request signature from user's wallet
+      const signatureBytes = await signMessage(prepared.messageBytes);
+      const signature = bs58.encode(signatureBytes);
+      
+      // 4. Finalize the authorization
+      const finalized = prepared.finalize(signature);
+      
+      // 5. Submit to backend
+      const res = await axios.post(`${BACKEND_URL}/api/bot/auth/agent`, {
+        address: publicKey.toBase58(),
+        agentPubKey,
+        agentPrivKey, // We send the private key to the server so it can trade 24/7
+        finalized
+      });
+      
+      if (res.data.success) {
+        // Save agent privkey locally too just in case
+        localStorage.setItem('bot_agent_privkey', agentPrivKey);
+        fetchStatus();
+      } else {
+        setError(res.data.error || "Agent authorization failed");
+      }
+    } catch (err: any) {
+      console.error("Agent Authorization Error:", err);
+      setError(err.message || "Failed to authorize agent");
     } finally {
       setIsLoading(false);
     }
@@ -299,15 +364,32 @@ export const TradingBot: React.FC = () => {
           <div className="flex flex-col items-center text-center gap-4">
             <div className="flex flex-col items-center">
               <h3 className="text-3xl font-black uppercase tracking-tighter text-white">
-                Authorization Required
+                {connected ? "Authorize Agent" : "Authorization Required"}
               </h3>
               <div className="h-1 w-12 bg-blue-500 rounded-full mt-2" />
             </div>
             
             <p className="text-zinc-400 text-sm font-mono leading-relaxed max-w-md">
-              To activate the Sentinel AI trading engine, please use the <span className="text-white font-bold">Connect Wallet</span> button in the top navigation bar. 
-              Once connected, you will be prompted to authorize a secure session to begin high-speed market operations.
+              {connected 
+                ? "Your wallet is connected. Now authorize the Sentinel AI Agent to execute trades on your behalf without requiring a signature for every transaction."
+                : "To activate the Sentinel AI trading engine, please use the Connect Wallet button in the top navigation bar. Once connected, you will be prompted to authorize a secure session to begin high-speed market operations."
+              }
             </p>
+
+            {connected && (
+              <button
+                onClick={authorizeAgent}
+                disabled={isLoading || !isWasmReady}
+                className="mt-4 px-8 py-4 bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-800 text-white font-black uppercase tracking-widest text-xs rounded-full transition-all shadow-[0_0_30px_rgba(37,99,235,0.3)] flex items-center gap-3 group"
+              >
+                {isLoading ? (
+                  <Activity size={16} className="animate-spin" />
+                ) : (
+                  <UserCheck size={16} className="group-hover:scale-110 transition-transform" />
+                )}
+                {isLoading ? "Authorizing..." : "Authorize Trading Agent"}
+              </button>
+            )}
           </div>
 
           <div className="flex items-center gap-6 pt-4 opacity-50">

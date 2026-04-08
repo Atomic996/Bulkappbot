@@ -8,11 +8,8 @@ import axios from "axios";
 import fetch from "node-fetch";
 import nacl from "tweetnacl";
 import bs58 from "bs58";
-import { computeIndicators, calculateTechnicalScore, getTradeDecision, RISK_CONFIG, TradeDecision } from "./src/lib/indicators.js";
+import { computeIndicators, calculateTechnicalScore, getTradeDecision, RISK_CONFIG } from "./src/lib/indicators.js";
 import { fetchHistoricalData } from "./src/lib/api.js";
-// @ts-ignore
-import { NativeKeypair, NativeSigner } from 'bulk-keychain';
-import { BulkClient, BotUpdateData } from './src/lib/BulkClient.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -23,26 +20,14 @@ const PRIVY_APP_ID = "cmbuls93q01jol20lf0ak0plb";
 const PRIVY_URL = "https://auth.privy.io/api/v1";
 const SERVER_KEY = "bulk_flow_server_auth_key_2026_03_31";
 
-// ══════════════════════════════════════════
-//   🤖 Bot State Management
-// ══════════════════════════════════════════
-interface BotState extends BotUpdateData {
-  logs: string[];
-  client: BulkClient | null;
-  address: string | null;
-  orderType: 'market' | 'limit' | 'auto';
-}
-
-const botState: BotState = {
-  balance: 0,
-  positions: [],
-  enabled: false,
-  status: "Idle",
-  logs: ["Bot initialized. Waiting for connection..."],
-  client: null,
-  address: null,
-  orderType: 'auto',
-};
+// --- BOT STATE ---
+let botEnabled = false;
+let botStatus = "Idle";
+let botBalance = 0;
+let botAddress: string | null = null;
+let botPositions: any[] = [];
+let botLogs: string[] = [];
+let botOrderType: 'market' | 'limit' | 'auto' = 'auto';
 
 const pendingSessions = new Map<string, { message: string, sessionPrivKey: string, timestamp: number }>();
 
@@ -50,31 +35,29 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ══════════════════════════════════════════
-//   🤖 Bot API Routes
-// ══════════════════════════════════════════
+// --- BOT API ROUTES ---
 const botRouter = express.Router();
 
 botRouter.get("/status", (req: Request, res: Response) => {
-  console.log(`[API] Status requested. Balance: $${botState.balance}, Session: ${!!botState.client}`);
+  console.log(`[API] Status requested. Balance: $${botBalance}, Session: ${!!bulkClient}`);
   res.json({
-    enabled: botState.enabled,
-    status: botState.status,
-    balance: botState.balance,
-    positions: botState.positions,
-    logs: botState.logs,
-    address: botState.address,
-    hasSession: !!botState.client,
-    orderType: botState.orderType
+    enabled: botEnabled,
+    status: botStatus,
+    balance: botBalance,
+    positions: botPositions,
+    logs: botLogs,
+    address: botAddress,
+    hasSession: !!bulkClient,
+    orderType: botOrderType
   });
 });
 
 botRouter.post("/settings", (req: Request, res: Response) => {
   const { orderType } = req.body;
   if (orderType === 'market' || orderType === 'limit' || orderType === 'auto') {
-    botState.orderType = orderType;
-    addBotLog(`Order Type updated to: ${botState.orderType.toUpperCase()}`);
-    res.json({ success: true, orderType: botState.orderType });
+    botOrderType = orderType;
+    addBotLog(`Order Type updated to: ${botOrderType.toUpperCase()}`);
+    res.json({ success: true, orderType: botOrderType });
   } else {
     res.status(400).json({ error: "Invalid order type" });
   }
@@ -93,33 +76,27 @@ botRouter.post("/auth/init", async (req: Request, res: Response) => {
       headers: {
         "Content-Type": "application/json",
         "Privy-App-Id": PRIVY_APP_ID,
-        "Origin": ORIGIN_URL,
-        "Referer": `${ORIGIN_URL}/`,
+        "Origin": "https://early.bulk.trade",
+        "Referer": "https://early.bulk.trade/",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         "Accept": "application/json"
       },
       body: JSON.stringify({ address })
     });
     
-    if (!r_init_res.ok) {
-      const errorText = await r_init_res.text();
-      console.error(`[Auth] Privy Init Failed: ${r_init_res.status}`, errorText);
-      throw new Error(`Privy SIWS Init Failed: ${r_init_res.status}`);
-    }
-
     const r_init_data = await r_init_res.json() as any;
     const nonce = r_init_data.nonce;
     const ts = new Date().toISOString().replace(".000Z", "Z");
     
-    // 2. Generate a temporary session key for the bot using bulk-keychain
-    const keypair = new NativeKeypair();
-    const sessionPubKey = keypair.address();
-    const sessionPrivKey = keypair.toBase58();
+    // 2. Generate a temporary session key for the bot
+    const sessionKeyPair = nacl.sign.keyPair();
+    const sessionPubKey = bs58.encode(sessionKeyPair.publicKey);
+    const sessionPrivKey = bs58.encode(sessionKeyPair.secretKey);
 
-    // 3. Build the SIWS message (Explicitly include the session key for stability)
+    // 3. Build the SIWS message (Exact format required by Privy)
     const message = 
       `early.bulk.trade wants you to sign in with your Solana account:\n${address}\n\n` +
-      `Authorize session key ${sessionPubKey} to trade on your behalf.\n\n` +
+      `You are proving you own ${address}.\n\n` +
       `URI: https://early.bulk.trade\n` +
       `Version: 1\n` +
       `Chain ID: mainnet\n` +
@@ -150,34 +127,28 @@ botRouter.post("/auth/init", async (req: Request, res: Response) => {
 botRouter.post("/auth/start", async (req: Request, res: Response) => {
   const { address, message, signature } = req.body;
   
+  // 1. Retrieve session from memory
   const sessionData = pendingSessions.get(address);
 
   if (!sessionData || sessionData.message !== message) {
     return res.status(400).json({ error: "Invalid or expired session request. Please refresh and try again." });
   }
 
-  if (botState.enabled) {
-    botState.client?.stop();
+  if (botEnabled) {
+    bulkClient?.stop();
   }
 
-  const keypair = NativeKeypair.fromBase58(sessionData.sessionPrivKey);
-  botState.client = new BulkClient(
-    keypair,
-    (update) => {
-      Object.assign(botState, update);
-      broadcast({ type: "bot_update", data: botState });
-    },
-    (msg) => addBotLog(msg)
-  );
-
-  const ok = await botState.client.authenticate(address, message, signature);
+  const sessionKeyPair = nacl.sign.keyPair.fromSecretKey(bs58.decode(sessionData.sessionPrivKey));
+  bulkClient = new BulkClient(sessionKeyPair);
+  const ok = await bulkClient.authenticate(address, message, signature);
   
   if (ok) {
+    // Cleanup
     pendingSessions.delete(address);
-    botState.client.connect();
-    botState.enabled = true;
-    botState.status = "Monitoring";
-    botState.address = address;
+
+    bulkClient.connect();
+    botEnabled = true;
+    botStatus = "Monitoring";
     addBotLog("Bot Authorized & Started.");
     res.json({ success: true, enabled: true });
   } else {
@@ -186,13 +157,13 @@ botRouter.post("/auth/start", async (req: Request, res: Response) => {
 });
 
 botRouter.post("/toggle", async (req: Request, res: Response) => {
-  if (!botState.client) return res.status(400).json({ error: "No active session. Please authorize first." });
+  if (!bulkClient) return res.status(400).json({ error: "No active session. Please authorize first." });
   
-  botState.enabled = !botState.enabled;
-  botState.status = botState.enabled ? "Monitoring" : "Idle";
-  addBotLog(botState.enabled ? "Auto-Trader Enabled." : "Auto-Trader Disabled.");
+  botEnabled = !botEnabled;
+  botStatus = botEnabled ? "Monitoring" : "Idle";
+  addBotLog(botEnabled ? "Auto-Trader Enabled." : "Auto-Trader Disabled.");
   
-  res.json({ success: true, enabled: botState.enabled, status: botState.status });
+  res.json({ success: true, enabled: botEnabled, status: botStatus });
 });
 
 app.use("/api/bot", botRouter);
@@ -211,8 +182,7 @@ app.get("/api/news", async (req: Request, res: Response) => {
 
   const newsDataApiKey = process.env.NEWSDATA_API_KEY;
   if (!newsDataApiKey || newsDataApiKey === "") {
-    console.warn("[News] NEWSDATA_API_KEY is missing. Returning empty news list.");
-    return res.json([]);
+    return res.status(500).json({ error: "NEWSDATA_API_KEY is missing in environment variables" });
   }
 
   try {
@@ -242,11 +212,215 @@ app.get("/api/health", (req: Request, res: Response) => res.json({ status: "ok" 
 // --- HELPER FUNCTIONS ---
 const addBotLog = (msg: string) => {
   const log = `[${new Date().toLocaleTimeString()}] ${msg}`;
-  botState.logs = [log, ...botState.logs].slice(0, 50);
+  botLogs = [log, ...botLogs].slice(0, 50);
   broadcast({ type: "bot_log", data: log });
 };
 
-// --- REMOVED OLD BULK CLIENT CLASS ---
+// --- BULK CLIENT CLASS ---
+class BulkClient {
+  private ws: WebSocket | null = null;
+  private token: string | null = null;
+  private address: string | null = null;
+  private sessionKeyPair: nacl.SignKeyPair;
+
+  constructor(sessionKeyPair: nacl.SignKeyPair) {
+    this.sessionKeyPair = sessionKeyPair;
+  }
+
+  async authenticate(address: string, message: string, signature: string) {
+    const headers = { 
+      "Origin": "https://early.bulk.trade", 
+      "Referer": "https://early.bulk.trade/", 
+      "Privy-App-Id": PRIVY_APP_ID, 
+      "Content-Type": "application/json",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      "Accept": "application/json"
+    };
+
+    console.log("[Auth] Authenticating with Privy:", {
+      address,
+      message_preview: message.slice(0, 50) + "...",
+      signature_preview: signature.slice(0, 20) + "..."
+    });
+
+    try {
+      const r_auth_res = await fetch(`${PRIVY_URL}/siws/authenticate`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          connectorType: "solana_adapter",
+          message: message,
+          signature: signature,
+          message_type: "plain",
+          mode: "login-or-sign-up",
+          walletClientType: "Phantom"
+        })
+      });
+
+      const r_auth_data = await r_auth_res.json() as any;
+      console.log("[Auth] Privy Response Success:", r_auth_data.token ? "Token Received" : "No Token");
+
+      if (!r_auth_data.token) {
+        console.error("[Auth] Privy Error Details:", r_auth_data);
+        return false;
+      }
+
+      this.token = r_auth_data.token;
+      this.address = address;
+      botAddress = address;
+      addBotLog(`Authenticated ${address.slice(0, 6)}...`);
+      return true;
+    } catch (err: any) {
+      console.error("Bulk Auth Error:", err.message);
+      return false;
+    }
+  }
+
+  connect() {
+    if (!this.token) return;
+    this.ws = new WebSocket(BULK_WS_URL, { 
+      headers: { 
+        "Authorization": `Bearer ${this.token}`, 
+        "Origin": ORIGIN_URL 
+      } 
+    });
+    this.ws.on("open", () => {
+      console.log(`[BulkWS] Session Connected for ${this.address}`);
+      this.ws?.send(JSON.stringify({ method: "subscribe", id: 1, subscription: [{ type: "account", user: this.address }] }));
+      addBotLog("Bot Session Connected.");
+    });
+    this.ws.on("message", (data) => {
+      try {
+        const msg = JSON.parse(data.toString());
+        if (msg.type === "account") {
+          console.log(`[BulkWS] Account Update Received: ${msg.data?.type}`);
+          if (msg.data?.type === "accountSnapshot" || msg.data?.type === "accountUpdate") {
+            const margin = msg.data.margin || {};
+            const newBalance = parseFloat(margin.availableBalance || margin.totalMarginBalance || margin.withdrawableBalance || "0");
+            
+            if (!isNaN(newBalance)) {
+              botBalance = newBalance;
+              console.log(`[BulkWS] Balance Updated: $${botBalance}`);
+            } else {
+              console.warn(`[BulkWS] Received invalid balance:`, margin);
+            }
+            
+            if (msg.data.positions) {
+              botPositions = msg.data.positions;
+            }
+            
+            broadcast({ type: "bot_update", data: { balance: botBalance, positions: botPositions } });
+          }
+        } else if (msg.type === "error") {
+          console.error(`[BulkWS] Error:`, msg.message);
+          addBotLog(`❌ Exchange Error: ${msg.message}`);
+        }
+      } catch (e) {
+        console.error("[BulkWS] Message Parse Error:", e);
+      }
+    });
+    this.ws.on("close", () => { if (botEnabled) setTimeout(() => this.connect(), 5000); });
+  }
+
+  async sendAction(method: string, params: any) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    const ts = Date.now();
+    
+    const action = { [method]: params };
+
+    // ترتيب المفاتيح مهم — مثل Python OrderedDict
+    const payload = {
+      account: this.address,
+      actions: [action],
+      nonce: ts,
+      type: "action"
+    };
+
+    // ← مهم جداً: بدون مسافات مثل Python separators=(',', ':')
+    const payloadJson = JSON.stringify(payload, null, 0)
+      .replace(/\s/g, '');
+
+    const signatureBytes = nacl.sign.detached(
+      Buffer.from(payloadJson),
+      this.sessionKeyPair.secretKey
+    );
+    const signature = bs58.encode(signatureBytes);
+    const signer = bs58.encode(this.sessionKeyPair.publicKey);
+
+    const msg = {
+      method: "post",
+      id: ts,
+      request: {
+        type: "action",
+        payload: {
+          ...payload,
+          signature,
+          signer
+        }
+      }
+    };
+    
+    this.ws.send(JSON.stringify(msg));
+  }
+
+  async setLeverage(symbol: string, leverage: number) {
+    // Correct format from Python: {"updateUserSettings": {"m": {symbol: int(leverage)}}}
+    await this.sendAction("updateUserSettings", { m: { [symbol]: leverage } });
+    addBotLog(`Updated Leverage for ${symbol} to ${leverage}x`);
+  }
+
+  async placeOrder(symbol: string, side: 'buy' | 'sell', size: number, price: number = 0, typeOverride?: 'market' | 'limit') {
+    // Formatting size based on asset (from Python logic)
+    const formattedSize = symbol.startsWith("BTC") ? size.toFixed(4) : size.toFixed(2);
+    
+    // Python order structure: {"m": {"b": is_buy, "c": symbol, "r": False, "sz": size}}
+    const params: any = {
+      b: side === 'buy',
+      c: symbol,
+      r: false,
+      sz: formattedSize
+    };
+
+    const finalType = typeOverride || botOrderType;
+
+    if (finalType === 'limit' && price > 0) {
+      params.p = price.toString();
+      params.tif = "gtc"; // Good Till Cancelled for limit orders
+    } else {
+      params.p = "0"; // 0 means market
+      params.tif = "ioc"; // Immediate Or Cancel for market orders
+    }
+    
+    const typeLabel = finalType === 'auto' ? 'AUTO' : finalType.toUpperCase();
+    await this.sendAction("m", params);
+    addBotLog(`Placed ${typeLabel} ${side.toUpperCase()} order for ${symbol} | Size: ${formattedSize}${params.p !== "0" ? ` | Price: ${price}` : ''}`);
+  }
+
+  async closePosition(symbol: string, size: number, side: string) {
+    const formattedSize = symbol.startsWith("BTC") ? Math.abs(size).toFixed(4) : Math.abs(size).toFixed(2);
+    const params = {
+      b: side === 'short', // if closing short, we need to buy
+      c: symbol,
+      r: true, // reduceOnly
+      sz: formattedSize,
+      p: "0", // market
+      tif: "ioc"
+    };
+    await this.sendAction("m", params);
+    addBotLog(`Closing ${side.toUpperCase()} position for ${symbol}`);
+  }
+
+  stop() {
+    this.ws?.close();
+    this.ws = null;
+    botEnabled = false;
+    botStatus = "Disconnected";
+    botAddress = null;
+    addBotLog("Session Closed.");
+  }
+}
+
+let bulkClient: BulkClient | null = null;
 
 // --- WEBSOCKET SERVER ---
 const wss = new WebSocketServer({ noServer: true });
@@ -260,7 +434,12 @@ wss.on("connection", (ws) => {
   // Send current bot status to the new client
   ws.send(JSON.stringify({ 
     type: "bot_update", 
-    data: botState
+    data: { 
+      balance: botBalance, 
+      positions: botPositions,
+      enabled: botEnabled,
+      status: botStatus
+    } 
   }));
 
   ws.on("close", () => clients.delete(ws));
@@ -286,7 +465,6 @@ function connectBulkWS() {
     try {
       const message = JSON.parse(data.toString());
       if (message.type !== "trades" || !Array.isArray(message.data?.trades)) return;
-      
       for (const t of message.data.trades) {
         const symbol = t.s;
         const price = parseFloat(t.px);
@@ -294,61 +472,28 @@ function connectBulkWS() {
         const side = t.side ? 'buy' : 'sell';
         const walletId = t.taker;
         const timestamp = Date.now();
-        
-        if (isNaN(price) || isNaN(size)) continue;
-
         const tradeData = { symbol, price, size, side, walletId, timestamp, serverKey: SERVER_KEY };
         broadcast({ type: "trade", data: tradeData });
 
         if (!walletsLocal[walletId]) {
-          walletsLocal[walletId] = { 
-            id: walletId, 
-            position: 'flat', 
-            entryPrice: null, 
-            entrySize: 0, 
-            totalPnL: 0, 
-            winCount: 0, 
-            tradeCount: 0, 
-            lastUpdate: timestamp 
-          };
+          walletsLocal[walletId] = { id: walletId, position: 'flat', entryPrice: null, entrySize: 0, totalPnL: 0, winCount: 0, tradeCount: 0, lastUpdate: timestamp };
         }
-        
         const w = walletsLocal[walletId];
         w.lastUpdate = timestamp;
-        
         if (w.position === 'flat') {
-          w.position = side === 'buy' ? 'long' : 'short'; 
-          w.entryPrice = price; 
-          w.entrySize = size; 
-          w.tradeCount += 1;
+          w.position = side === 'buy' ? 'long' : 'short'; w.entryPrice = price; w.entrySize = size; w.tradeCount += 1;
         } else if ((w.position === 'long' && side === 'sell') || (w.position === 'short' && side === 'buy')) {
           const pnl = w.position === 'long' ? (price - w.entryPrice) * w.entrySize : (w.entryPrice - price) * w.entrySize;
-          w.totalPnL += pnl; 
-          if (pnl > 0) w.winCount += 1; 
-          w.position = 'flat'; 
-          w.entryPrice = null; 
-          w.entrySize = 0;
+          w.totalPnL += pnl; if (pnl > 0) w.winCount += 1; w.position = 'flat'; w.entryPrice = null; w.entrySize = 0;
         }
       }
-      
       const now = Date.now();
       if (now - lastUIBroadcast > 3000) {
         lastUIBroadcast = now;
-        const top = Object.values(walletsLocal)
-          .sort((a, b) => Math.abs(b.totalPnL) - Math.abs(a.totalPnL))
-          .slice(0, 50);
-        broadcast({ 
-          type: "wallets_update", 
-          data: top, 
-          stats: { 
-            activeWallets: Object.values(walletsLocal).filter(w => w.position !== 'flat').length, 
-            totalWallets: Object.keys(walletsLocal).length 
-          } 
-        });
+        const top = Object.values(walletsLocal).sort((a, b) => Math.abs(b.totalPnL) - Math.abs(a.totalPnL)).slice(0, 50);
+        broadcast({ type: "wallets_update", data: top, stats: { activeWallets: Object.values(walletsLocal).filter(w => w.position !== 'flat').length, totalWallets: Object.keys(walletsLocal).length } });
       }
-    } catch (e) {
-      console.error("[BulkWS] Error processing message:", e);
-    }
+    } catch (e) {}
   });
   ws.on("close", () => setTimeout(connectBulkWS, 5000));
 }
@@ -356,8 +501,8 @@ connectBulkWS();
 
 // --- AUTO TRADER ---
 const runAutoTrader = async () => {
-  if (!botState.enabled || !botState.client) return;
-  botState.status = "Analyzing...";
+  if (!botEnabled || !bulkClient) return;
+  botStatus = "Analyzing...";
   
   for (const sym of ["BTC", "ETH", "SOL"]) {
     try {
@@ -370,12 +515,12 @@ const runAutoTrader = async () => {
       }
 
       const symbol = `${sym}-USD`;
-      const pos = botState.positions.find(p => p.symbol === symbol);
+      const pos = botPositions.find(p => p.symbol === symbol);
       const currentPosition = pos 
         ? { size: parseFloat(pos.size), entryPrice: parseFloat(pos.price) } 
         : null;
 
-      const decision = getTradeDecision(history, botState.balance, symbol, currentPosition);
+      const decision = getTradeDecision(history, botBalance, symbol, currentPosition);
       const currentPrice = history[history.length - 1].close;
       
       addBotLog(`📊 ${sym} | ${decision.regime} | [${decision.strategy}] | Score: ${decision.score.toFixed(0)} | → ${decision.action}`);
@@ -383,7 +528,7 @@ const runAutoTrader = async () => {
 
       // Check for over-trading
       if ((decision.action === 'BUY' || decision.action === 'SELL') && !currentPosition) {
-        if (botState.positions.length >= RISK_CONFIG.maxOpenPositions) {
+        if (botPositions.length >= RISK_CONFIG.maxOpenPositions) {
           addBotLog(`⚠️ Max positions reached (${RISK_CONFIG.maxOpenPositions}). Skipping ${sym}.`);
           continue;
         }
@@ -391,18 +536,18 @@ const runAutoTrader = async () => {
 
       switch (decision.action) {
         case 'BUY':
-          const buyType = botState.orderType === 'auto' ? decision.orderType : botState.orderType;
-          await botState.client.placeOrder(symbol, "buy", decision.size, currentPrice, buyType, decision.stopLossPrice, decision.takeProfitPrice);
+          const buyType = botOrderType === 'auto' ? decision.orderType : botOrderType;
+          await bulkClient.placeOrder(symbol, "buy", decision.size, currentPrice, buyType);
           break;
         case 'SELL':
-          const sellType = botState.orderType === 'auto' ? decision.orderType : botState.orderType;
-          await botState.client.placeOrder(symbol, "sell", decision.size, currentPrice, sellType, decision.stopLossPrice, decision.takeProfitPrice);
+          const sellType = botOrderType === 'auto' ? decision.orderType : botOrderType;
+          await bulkClient.placeOrder(symbol, "sell", decision.size, currentPrice, sellType);
           break;
         case 'CLOSE_LONG':
-          if (currentPosition) await botState.client.closePosition(symbol, currentPosition.size, "long");
+          if (currentPosition) await bulkClient.closePosition(symbol, currentPosition.size, "long");
           break;
         case 'CLOSE_SHORT':
-          if (currentPosition) await botState.client.closePosition(symbol, currentPosition.size, "short");
+          if (currentPosition) await bulkClient.closePosition(symbol, currentPosition.size, "short");
           break;
         default:
           // HOLD - do nothing
@@ -412,7 +557,7 @@ const runAutoTrader = async () => {
       addBotLog(`❌ ${sym} Error: ${err.message}`);
     }
   }
-  botState.status = "Monitoring";
+  botStatus = "Monitoring";
 };
 setInterval(runAutoTrader, 5 * 60 * 1000);
 

@@ -733,26 +733,6 @@ export const Dashboard: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Live Bulk Flow Section */}
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between px-2">
-                    <span className="text-[9px] font-black text-zinc-600 uppercase tracking-[0.2em]">Bulk Flow Live</span>
-                    <div className="h-px flex-1 mx-4 bg-white/5" />
-                  </div>
-                  <div className="h-[300px] rounded-sm border border-white/10 bg-white/[0.02] overflow-hidden">
-                    <BulkAnalysis compact={true} />
-                  </div>
-                  <button 
-                    onClick={() => {
-                      setActiveTab('bulk');
-                      setIsSidebarOpen(false);
-                    }}
-                    className="w-full py-2 text-[8px] font-black text-zinc-500 uppercase tracking-widest hover:text-white transition-colors"
-                  >
-                    View Full Analysis
-                  </button>
-                </div>
-
                 {/* AI Chatbot Section */}
                 <div className="space-y-3">
                   <div className="flex items-center justify-between px-2">

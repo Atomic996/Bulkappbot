@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useWalletModal } from '@solana/wallet-adapter-react-ui';
-import bs58 from 'bs58';
 import axios from 'axios';
 import { 
   Play, 
@@ -19,6 +18,7 @@ import {
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import bs58 from 'bs58';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -148,14 +148,14 @@ export const TradingBot: React.FC = () => {
       const encodedMessage = new TextEncoder().encode(message);
       const signed = await signMessage(encodedMessage);
       
-      // Convert signature to base58 (Solana standard)
-      const signature = bs58.encode(signed);
+      // Convert signature to base64
+      const signatureBase64 = btoa(String.fromCharCode.apply(null, Array.from(signed)));
 
       // 3. Send signature back to server
       await axios.post(`${BACKEND_URL}/api/bot/auth/start`, {
         address: publicKey?.toBase58(),
         message,
-        signature: signature
+        signature: signatureBase64
       });
       
       fetchStatus();

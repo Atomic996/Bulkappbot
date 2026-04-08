@@ -90,7 +90,7 @@ export async function fetchHistoricalData(symbol: string, timeframe: Timeframe =
   }
 }
 
-const BACKEND_URL = typeof window !== 'undefined' ? window.location.origin : "";
+const BACKEND_URL = "https://bulkappbot-production.up.railway.app";
 
 export async function fetchNews(symbol: string): Promise<NewsItem[]> {
   try {

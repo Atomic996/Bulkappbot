@@ -172,8 +172,6 @@ export interface TradeDecision {
   confidence: 'HIGH' | 'MEDIUM' | 'LOW';
   reason: string;
   orderType: 'market' | 'limit';
-  stopLossPrice?: number;
-  takeProfitPrice?: number;
 }
 
 export function getTradeDecision(
@@ -217,42 +215,12 @@ export function getTradeDecision(
   if (score > RISK_CONFIG.minScoreToTrade) {
     const action = 'BUY';
     const size = calculatePositionSize(balance, ind.price, ind.atr, score, symbol);
-    const slDistance = ind.atr * RISK_CONFIG.initialSLATRMult;
-    const stopLossPrice = ind.price - slDistance;
-    const takeProfitPrice = ind.price + (slDistance * RISK_CONFIG.tpRRRatio);
-    
-    return { 
-      action, 
-      size, 
-      score, 
-      strategy: regime, 
-      regime, 
-      confidence, 
-      reason: `إشارة شراء قوية [${regime}]`, 
-      orderType: getOrderType(action),
-      stopLossPrice: parseFloat(stopLossPrice.toFixed(symbol.includes('BTC') ? 2 : 4)),
-      takeProfitPrice: parseFloat(takeProfitPrice.toFixed(symbol.includes('BTC') ? 2 : 4))
-    };
+    return { action, size, score, strategy: regime, regime, confidence, reason: `إشارة شراء قوية [${regime}]`, orderType: getOrderType(action) };
   }
   if (score < (100 - RISK_CONFIG.minScoreToTrade)) {
     const action = 'SELL';
     const size = calculatePositionSize(balance, ind.price, ind.atr, score, symbol);
-    const slDistance = ind.atr * RISK_CONFIG.initialSLATRMult;
-    const stopLossPrice = ind.price + slDistance;
-    const takeProfitPrice = ind.price - (slDistance * RISK_CONFIG.tpRRRatio);
-
-    return { 
-      action, 
-      size, 
-      score, 
-      strategy: regime, 
-      regime, 
-      confidence, 
-      reason: `إشارة بيع قوية [${regime}]`, 
-      orderType: getOrderType(action),
-      stopLossPrice: parseFloat(stopLossPrice.toFixed(symbol.includes('BTC') ? 2 : 4)),
-      takeProfitPrice: parseFloat(takeProfitPrice.toFixed(symbol.includes('BTC') ? 2 : 4))
-    };
+    return { action, size, score, strategy: regime, regime, confidence, reason: `إشارة بيع قوية [${regime}]`, orderType: getOrderType(action) };
   }
 
   return { action: 'HOLD', size: 0, score, strategy: '-', regime, confidence: 'LOW', reason: 'منطقة محايدة', orderType: 'market' };

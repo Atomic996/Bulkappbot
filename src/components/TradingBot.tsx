@@ -215,14 +215,32 @@ export const TradingBot: React.FC = () => {
     setIsLoading(true);
     setError(null);
     try {
-      // We don't have a direct "close" API, but we can call toggle if it's enabled, 
-      // or we can just disconnect locally. 
-      // Actually, let's add a proper close endpoint in server.ts if needed, 
-      // but for now, let's just disconnect the wallet.
+      // 1. Tell backend to clear session
+      await axios.post(`${BACKEND_URL}/api/bot/auth/logout`);
+      
+      // 2. Disconnect wallet locally
       disconnect();
-      setStatus(prev => ({ ...prev, enabled: false, hasSession: false, status: "Disconnected" }));
+      
+      // 3. Reset local state
+      setStatus(prev => ({ 
+        ...prev, 
+        enabled: false, 
+        hasSession: false, 
+        status: "Disconnected",
+        address: null,
+        balance: 0,
+        positions: []
+      }));
+      
+      // 4. Clear wallet adapter storage
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('walletName');
+      }
     } catch (err) {
-      setError("Failed to close session");
+      console.error("Logout error:", err);
+      // Fallback: still disconnect locally
+      disconnect();
+      setStatus(prev => ({ ...prev, hasSession: false }));
     } finally {
       setIsLoading(false);
     }
@@ -294,10 +312,11 @@ export const TradingBot: React.FC = () => {
           {connected && (
             <button
               onClick={closeSession}
-              className="p-3 bg-zinc-900 border border-white/10 rounded-sm hover:bg-zinc-800 transition-all text-zinc-500 hover:text-white"
-              title="Close Session"
+              className="px-6 py-3 bg-zinc-900 border border-white/10 rounded-full hover:bg-zinc-800 transition-all text-zinc-500 hover:text-rose-500 flex items-center gap-2 group"
+              title="Logout & Close Session"
             >
-              <Square size={16} />
+              <span className="text-[9px] font-black uppercase tracking-widest">Logout</span>
+              <Square size={14} className="group-hover:fill-rose-500/20" />
             </button>
           )}
         </div>

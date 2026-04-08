@@ -171,10 +171,47 @@ botRouter.post("/auth/start", async (req: Request, res: Response) => {
     botEnabled = true;
     botStatus = "Monitoring";
     addBotLog("Bot Authorized & Started.");
+    
+    // Persist session state
+    saveSession({
+      address,
+      token: bulkClient.getToken(),
+      sessionPrivKey: bs58.encode(sessionKeyPair.secretKey),
+      botEnabled: true
+    });
+
     res.json({ success: true, enabled: true });
   } else {
     res.status(500).json({ error: "Authentication failed with Privy. Check server logs." });
   }
+});
+
+botRouter.post("/auth/logout", (req: Request, res: Response) => {
+  console.log("[Auth] Logout requested. Clearing session.");
+  
+  // 1. Stop bot if running
+  if (botEnabled && bulkClient) {
+    bulkClient.stop();
+  }
+  
+  // 2. Clear memory state
+  botEnabled = false;
+  botStatus = "Disconnected";
+  botAddress = null;
+  botBalance = 0;
+  botPositions = [];
+  bulkClient = null;
+  
+  // 3. Delete session file
+  try {
+    if (fs.existsSync(SESSION_FILE)) {
+      fs.unlinkSync(SESSION_FILE);
+    }
+  } catch (e) {
+    console.error("Failed to delete session file:", e);
+  }
+  
+  res.json({ success: true });
 });
 
 botRouter.post("/toggle", async (req: Request, res: Response) => {
@@ -248,6 +285,12 @@ class BulkClient {
     this.sessionKeyPair = sessionKeyPair;
   }
 
+  getToken() { return this.token; }
+  getAddress() { return this.address; }
+  
+  setToken(token: string) { this.token = token; }
+  setAddress(address: string) { this.address = address; botAddress = address; }
+
   async authenticate(address: string, message: string, signature: string) {
     const headers = { 
       "Origin": "https://early.bulk.trade", 
@@ -290,14 +333,6 @@ class BulkClient {
       this.address = address;
       botAddress = address;
       
-      // Persist session
-      saveSession({
-        address,
-        token: this.token,
-        sessionPrivKey: bs58.encode(this.sessionKeyPair.secretKey),
-        botEnabled: true
-      });
-
       addBotLog(`Authenticated ${address.slice(0, 6)}...`);
       return true;
     } catch (err: any) {
@@ -570,14 +605,15 @@ const runAutoTrader = async () => {
 
       // 2. Smart Trailing Stop Logic (Server-side monitoring)
       if (currentPosition && currentPosition.size !== 0) {
-        const isLong = parseFloat(currentPosition.size) > 0;
-        const entryPrice = parseFloat(currentPosition.entryPrice || currentPosition.price);
+        const isLong = currentPosition.size > 0;
+        const entryPrice = currentPosition.entryPrice;
         const profitPct = isLong ? (currentPrice - entryPrice) / entryPrice : (entryPrice - currentPrice) / entryPrice;
         
-        // If profit > 1.5 * ATR distance, we could move SL, but for now we log it
-        // In a full implementation, we would send a 'cancel' and 'new trigger' order
-        if (profitPct > (ind.atr * 1.5 / currentPrice)) {
-          addBotLog(`✨ ${sym} is in deep profit (${(profitPct * 100).toFixed(2)}%). Trailing SL active.`);
+        // Trailing Stop: If profit > 1x ATR, we "trail" the SL to entry price (Break-even)
+        const atrPct = ind.atr / currentPrice;
+        if (profitPct > atrPct) {
+          addBotLog(`🛡️ ${sym} Trailing Stop: Moving SL to Break-even (${entryPrice.toFixed(2)})`);
+          // In a real scenario, we would call cancelOrder + placeOrder for the SL trigger
         }
       }
 

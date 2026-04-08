@@ -58,7 +58,6 @@ export const TradingBot: React.FC = () => {
     };
   });
   const [isLoading, setIsLoading] = useState(false);
-  const [isAuthorizing, setIsAuthorizing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -144,55 +143,6 @@ export const TradingBot: React.FC = () => {
     }
   };
 
-  const startBotWithWallet = async () => {
-    if (!connected) {
-      setIsAuthorizing(true);
-      setVisible(true);
-      return;
-    }
-    if (!signMessage) {
-      setError("Your wallet does not support message signing. Please use Phantom or Solflare.");
-      return;
-    }
-    
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      // 1. Get SIWS message from server
-      const siwsRes = await axios.post(`${BACKEND_URL}/api/bot/auth/init`, { address: publicKey?.toBase58() });
-      const { message } = siwsRes.data;
-
-      // 2. Sign the message
-      const encodedMessage = new TextEncoder().encode(message);
-      const signed = await signMessage(encodedMessage);
-      
-      // Convert signature to base64
-      const signatureBase64 = btoa(String.fromCharCode.apply(null, Array.from(signed)));
-
-      // 3. Send signature back to server
-      await axios.post(`${BACKEND_URL}/api/bot/auth/start`, {
-        address: publicKey?.toBase58(),
-        message,
-        signature: signatureBase64
-      });
-      
-      fetchStatus();
-    } catch (err: any) {
-      console.error("[Bot] Start Error:", err);
-      setError(err.response?.data?.error || err.message || "Authorization failed");
-    } finally {
-      setIsLoading(false);
-      setIsAuthorizing(false);
-    }
-  };
-
-  useEffect(() => {
-    if (connected && isAuthorizing && !isLoading) {
-      startBotWithWallet();
-    }
-  }, [connected, isAuthorizing, isLoading]);
-
   const stopBot = async () => {
     setIsLoading(true);
     setError(null);
@@ -277,28 +227,6 @@ export const TradingBot: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-4">
-          <button
-            onClick={startBotWithWallet}
-            disabled={isLoading || status.enabled}
-            className={cn(
-              "px-8 py-3 rounded-full font-black uppercase tracking-[0.2em] text-[10px] transition-all flex items-center gap-3 shadow-2xl",
-              status.enabled 
-                ? "bg-emerald-500/20 text-emerald-500 border border-emerald-500/30 cursor-default" 
-                : "bg-white text-black hover:bg-zinc-200 shadow-white/20 disabled:opacity-50 disabled:cursor-not-allowed"
-            )}
-          >
-            {isLoading ? (
-              <Activity size={16} className="animate-spin" />
-            ) : status.enabled ? (
-              <ShieldCheck size={16} />
-            ) : (
-              <Play size={16} fill="currentColor" />
-            )}
-            {status.enabled 
-              ? "Auto-Trading Active" 
-              : (connected ? "Authorize & Start" : "Connect & Start")}
-          </button>
-          
           {status.hasSession && (
             <div className="flex items-center gap-2">
               <button
@@ -360,7 +288,7 @@ export const TradingBot: React.FC = () => {
             <div className="w-28 h-28 bg-blue-500/10 rounded-full flex items-center justify-center animate-pulse" />
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center shadow-[0_0_40px_rgba(59,130,246,0.4)]">
-                {connected ? <Lock size={36} className="text-white" /> : <Wallet size={36} className="text-white" />}
+                <Lock size={36} className="text-white" />
               </div>
             </div>
             <div className="absolute -bottom-2 -right-2 w-10 h-10 bg-zinc-900 border border-white/10 rounded-full flex items-center justify-center shadow-xl">
@@ -371,36 +299,25 @@ export const TradingBot: React.FC = () => {
           <div className="flex flex-col items-center text-center gap-4">
             <div className="flex flex-col items-center">
               <h3 className="text-3xl font-black uppercase tracking-tighter text-white">
-                {connected ? "Authorize Session" : "Connect Trading Hub"}
+                Authorization Required
               </h3>
               <div className="h-1 w-12 bg-blue-500 rounded-full mt-2" />
             </div>
             
             <p className="text-zinc-400 text-sm font-mono leading-relaxed max-w-md">
-              {connected 
-                ? "AI Delegate ready. Authorize a strategic proxy to begin high-speed market operations. This creates a secure, temporary execution layer that acts on your behalf while your main assets remain fully protected."
-                : "Unlock the Sentinel AI network. Connect your wallet to delegate execution to our high-frequency trading engine. We use a secure proxy layer to ensure your private keys are never exposed to the trading environment."}
+              To activate the Sentinel AI trading engine, please use the <span className="text-white font-bold">Connect Wallet</span> button in the top navigation bar. 
+              Once connected, you will be prompted to authorize a secure session to begin high-speed market operations.
             </p>
           </div>
 
-          <div className="flex flex-col items-center gap-4 w-full max-w-sm">
-            <button 
-              onClick={startBotWithWallet}
-              className="w-full h-16 bg-white text-black text-sm font-black uppercase tracking-[0.2em] rounded-full hover:bg-zinc-200 transition-all shadow-[0_0_30px_rgba(255,255,255,0.2)] flex items-center justify-center gap-3 group"
-            >
-              {connected ? <Zap size={18} className="group-hover:scale-110 transition-transform" /> : <Wallet size={18} className="group-hover:scale-110 transition-transform" />}
-              {connected ? "Authorize AI Delegate" : "Connect & Delegate"}
-            </button>
-            
-            <div className="flex items-center gap-6 pt-4 opacity-50">
-              <div className="flex items-center gap-2">
-                <ShieldCheck size={14} className="text-emerald-500" />
-                <span className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Strategic Proxy</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Lock size={14} className="text-blue-500" />
-                <span className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Isolated Execution</span>
-              </div>
+          <div className="flex items-center gap-6 pt-4 opacity-50">
+            <div className="flex items-center gap-2">
+              <ShieldCheck size={14} className="text-emerald-500" />
+              <span className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Strategic Proxy</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Lock size={14} className="text-blue-500" />
+              <span className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Isolated Execution</span>
             </div>
           </div>
 

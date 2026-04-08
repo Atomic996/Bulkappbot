@@ -275,7 +275,7 @@ app.get("/api/news", async (req: Request, res: Response) => {
 
   const newsDataApiKey = process.env.NEWSDATA_API_KEY;
   if (!newsDataApiKey || newsDataApiKey === "") {
-    return res.status(500).json({ error: "NEWSDATA_API_KEY is missing in environment variables" });
+    return res.json([]); // Return empty array instead of 500
   }
 
   try {

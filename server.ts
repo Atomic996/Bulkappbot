@@ -586,6 +586,7 @@ const runAutoTrader = async () => {
       const currentPrice = history[history.length - 1].close;
       const ind = computeIndicators(history);
       
+      // Log the decision with the regime and strategy info from our custom algorithm
       addBotLog(`📊 ${sym} | ${decision.regime} | [${decision.strategy}] | Score: ${decision.score.toFixed(0)} | → ${decision.action}`);
       if (decision.reason) addBotLog(`   ${decision.reason}`);
 

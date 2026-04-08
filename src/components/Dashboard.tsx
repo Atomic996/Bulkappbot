@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'motion/react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useWalletModal } from '@solana/wallet-adapter-react-ui';
+import axios from 'axios';
 import { 
   Activity, 
   RefreshCw, 
@@ -23,7 +24,8 @@ import {
   BarChart3,
   Clock,
   Wallet,
-  ChevronDown
+  ChevronDown,
+  Lock
 } from 'lucide-react';
 import { AssetSignal, PriceData, NewsItem, Timeframe } from '../types.js';
 import { fetchHistoricalData, fetchNews } from '../lib/api.js';
@@ -278,7 +280,7 @@ export const Dashboard: React.FC = () => {
   const currentHistory = useMemo(() => historicalData[selectedSymbol] || [], [historicalData, selectedSymbol]);
   const currentNews = useMemo(() => news[selectedSymbol] || [], [news, selectedSymbol]);
 
-  const { publicKey, connected } = useWallet();
+  const { publicKey, connected, disconnect } = useWallet();
   const { setVisible } = useWalletModal();
 
   return (
@@ -314,16 +316,43 @@ export const Dashboard: React.FC = () => {
 
           <div className="flex items-center gap-2 md:gap-3">
             {connected && publicKey ? (
-              <button 
-                onClick={() => setVisible(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-white/5 border border-white/10 rounded-full hover:bg-white/10 transition-all group"
-              >
-                <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
-                <span className="text-[10px] font-mono font-bold text-white">
-                  {publicKey.toBase58().slice(0, 4)}...{publicKey.toBase58().slice(-4)}
-                </span>
-                <ChevronDown size={12} className="text-zinc-500 group-hover:text-white transition-colors" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => setVisible(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-white/5 border border-white/10 rounded-full hover:bg-white/10 transition-all group"
+                >
+                  <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+                  <span className="text-[10px] font-mono font-bold text-white">
+                    {publicKey.toBase58().slice(0, 4)}...{publicKey.toBase58().slice(-4)}
+                  </span>
+                  <ChevronDown size={12} className="text-zinc-500 group-hover:text-white transition-colors" />
+                </button>
+                
+                {/* Logout Button in Header */}
+                {typeof window !== 'undefined' && localStorage.getItem('bot_has_session') === 'true' && (
+                  <button
+                    onClick={async () => {
+                      try {
+                        await axios.post(`${window.location.origin}/api/bot/auth/logout`);
+                        disconnect();
+                        localStorage.removeItem('bot_has_session');
+                        localStorage.removeItem('bot_address');
+                        localStorage.removeItem('walletName');
+                        window.location.reload();
+                      } catch (e) {
+                        console.error("Logout failed:", e);
+                        disconnect();
+                        window.location.reload();
+                      }
+                    }}
+                    className="px-4 py-2 bg-rose-500/10 border border-rose-500/20 text-rose-500 rounded-full hover:bg-rose-500/20 transition-all flex items-center gap-2 group"
+                    title="Logout & Close Session"
+                  >
+                    <span className="text-[9px] font-black uppercase tracking-widest">Logout</span>
+                    <Lock size={12} />
+                  </button>
+                )}
+              </div>
             ) : (
               <button 
                 onClick={() => setVisible(true)}

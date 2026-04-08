@@ -189,11 +189,11 @@ export async function getChatResponse(
 
     Your task:
     1. Perform a detailed analysis based on the Fusion v3 rules.
-    2. Provide a clear decision (Buy, Sell, Wait) in Arabic.
+    2. Provide a clear decision (Buy, Sell, Wait) in English.
     3. Suggest Trade Type (Short, Medium, Long term).
     4. Provide specific SL and TP targets based on current price.
     5. Explain the score breakdown for Technical, Behavioral, and News layers.
-    6. Answer in Arabic as requested by the user.
+    6. Answer in English as requested by the user.
 
     Format the response beautifully with clear sections and professional trading terminology.
   `;
@@ -204,9 +204,9 @@ export async function getChatResponse(
       contents: prompt,
     });
 
-    return response.text || "عذراً، لم أتمكن من تحليل البيانات حالياً.";
+    return response.text || "Sorry, I couldn't analyze the data at the moment.";
   } catch (error) {
     console.error("Error getting chat response:", error instanceof Error ? error.message : String(error));
-    return "حدث خطأ أثناء محاولة الاتصال بمحرك الذكاء الاصطناعي.";
+    return "An error occurred while trying to connect to the AI engine.";
   }
 }

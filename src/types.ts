@@ -55,7 +55,7 @@ export interface FusionV3Analysis {
   market_score: number;
   trade_score: number;
   trade_type: 'SHORT' | 'MEDIUM' | 'LONG';
-  decision: 'دخول' | 'انتظار' | 'رفض';
+  decision: 'ENTRY' | 'WAIT' | 'REJECT';
   sl: number;
   tp1: number;
   tp2: number;

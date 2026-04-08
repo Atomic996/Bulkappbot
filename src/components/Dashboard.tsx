@@ -81,7 +81,7 @@ export const Dashboard: React.FC = () => {
       const [history, rawNews] = await Promise.all([
         fetchHistoricalData(symbol, currentTf, 500),
         fetchNews(symbol).catch(err => {
-          setNewsError(prev => ({ ...prev, [symbol]: "فشل جلب الأخبار من المصدر" }));
+          setNewsError(prev => ({ ...prev, [symbol]: "Failed to fetch intelligence from source" }));
           return [];
         })
       ]);
@@ -138,7 +138,7 @@ export const Dashboard: React.FC = () => {
       }
 
       if (Math.abs(change24h) > 5) {
-        addAlert(`تقلبات قوية لـ ${symbol}: ${change24h.toFixed(2)}%`, 'warning');
+        addAlert(`High volatility detected for ${symbol}: ${change24h.toFixed(2)}%`, 'warning');
       }
 
     } catch (error) {
@@ -365,14 +365,14 @@ export const Dashboard: React.FC = () => {
           </div>
 
           {/* Viewport Tabs */}
-          <div className="flex items-center justify-between px-4 md:px-6 bg-zinc-900/40 border-b border-white/10">
-            <div className="flex overflow-x-auto custom-scrollbar no-scrollbar">
+          <div className="flex items-center justify-center px-4 md:px-6 bg-zinc-900/40 border-b border-white/10">
+            <div className="flex overflow-x-auto custom-scrollbar no-scrollbar gap-2">
               {(['analysis', 'technical', 'bulk', 'news', 'bot'] as const).map(tab => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
                   className={cn(
-                    "relative px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-all shrink-0 border-r border-white/5",
+                    "relative px-8 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-all shrink-0 border-x border-white/5",
                     activeTab === tab 
                       ? "text-white bg-white/[0.03]" 
                       : "text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.01]"
@@ -392,17 +392,6 @@ export const Dashboard: React.FC = () => {
                 </button>
               ))}
             </div>
-            <div className="hidden sm:flex items-center gap-4 px-6">
-              <div className="flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-[9px] font-mono text-zinc-500 uppercase">Live Feed</span>
-              </div>
-              <div className="h-4 w-px bg-white/10" />
-              <div className="flex items-center gap-2">
-                <Clock size={12} className="text-zinc-600" />
-                <span className="text-[10px] font-mono text-zinc-500 uppercase">{new Date().toLocaleTimeString()}</span>
-              </div>
-            </div>
           </div>
 
           {/* Main Viewport Content */}
@@ -421,12 +410,6 @@ export const Dashboard: React.FC = () => {
                       <div className="flex flex-col">
                         <span className="text-[10px] font-serif italic text-zinc-500 uppercase tracking-widest">Market Overview</span>
                         <h2 className="text-xl font-black text-white uppercase tracking-tighter">Asset Index</h2>
-                      </div>
-                      <div className="flex items-center gap-4 text-zinc-500">
-                        <div className="flex items-center gap-2">
-                          <div className="w-2 h-2 rounded-full bg-emerald-500" />
-                          <span className="text-[10px] font-mono uppercase">Live Feed</span>
-                        </div>
                       </div>
                     </div>
 
@@ -572,10 +555,10 @@ export const Dashboard: React.FC = () => {
                         <div className="relative p-5 bg-zinc-900/60 border border-white/5 rounded-sm overflow-hidden">
                           <p className="text-[11px] text-zinc-400 leading-relaxed font-serif italic relative z-10">
                             {currentSignal?.recommendation?.includes('BUY') ? 
-                              "بناءً على زخم MACD الحالي وقوة RSI، نلاحظ تشكل نموذج استمراري صعودي. ننصح بمراقبة مستوى الدعم القادم لتعزيز المراكز." :
+                              "Based on current MACD momentum and RSI strength, a bullish continuation pattern is forming. Monitor support levels for entry." :
                               currentSignal?.recommendation?.includes('SELL') ?
-                              "تظهر المؤشرات ضعفاً في الزخم مع انحراف سلبي في RSI. يفضل تقليل التعرض للمخاطر وانتظار تأكيد الكسر للأسفل." :
-                              "السوق حالياً في مرحلة تجميع عرضية. مؤشر Bollinger Bands يضيق مما يشير إلى انفجار سعري قريب. يفضل الانتظار خارج السوق."
+                              "Indicators show momentum weakness with negative RSI divergence. Consider reducing exposure and waiting for a breakdown confirmation." :
+                              "Market is in a sideways consolidation phase. Bollinger Bands are tightening, suggesting an imminent breakout. Neutral stance recommended."
                             }
                           </p>
                           <div className="mt-4 flex items-center justify-between border-t border-white/5 pt-3">
@@ -753,7 +736,7 @@ export const Dashboard: React.FC = () => {
                       <span className="text-xs font-black uppercase tracking-tight">Sentinel Advisor</span>
                     </div>
                     <p className="text-[10px] text-zinc-500 leading-relaxed">
-                      احصل على تحليلات فورية وتوصيات ذكية من خلال المحادثة المباشرة مع البوت.
+                      Get instant intelligence and smart trade recommendations through direct AI consultation.
                     </p>
                     <div className="mt-2 flex items-center gap-2 text-[9px] font-black text-white uppercase tracking-widest group-hover:gap-3 transition-all">
                       Open Chat <ChevronRight size={10} />

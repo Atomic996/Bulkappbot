@@ -428,8 +428,6 @@ const clients = new Set<WebSocket>();
 
 wss.on("connection", (ws) => {
   clients.add(ws);
-  const topWallets = Object.values(walletsLocal).sort((a, b) => Math.abs(b.totalPnL) - Math.abs(a.totalPnL)).slice(0, 50);
-  ws.send(JSON.stringify({ type: "init_wallets", data: topWallets }));
   
   // Send current bot status to the new client
   ws.send(JSON.stringify({ 
@@ -449,55 +447,6 @@ function broadcast(message: any) {
   const payload = JSON.stringify(message);
   clients.forEach(c => { if (c.readyState === WebSocket.OPEN) c.send(payload); });
 }
-
-// --- BACKGROUND WORKER ---
-let ws: WebSocket | null = null;
-const walletsLocal: Record<string, any> = {};
-let lastWalletSync = Date.now();
-let lastUIBroadcast = Date.now();
-
-function connectBulkWS() {
-  ws = new WebSocket(BULK_WS_URL);
-  ws.on("open", () => {
-    ws?.send(JSON.stringify({ method: "subscribe", subscription: [{ type: "trades", symbol: "BTC-USD" }, { type: "trades", symbol: "ETH-USD" }, { type: "trades", symbol: "SOL-USD" }] }));
-  });
-  ws.on("message", async (data) => {
-    try {
-      const message = JSON.parse(data.toString());
-      if (message.type !== "trades" || !Array.isArray(message.data?.trades)) return;
-      for (const t of message.data.trades) {
-        const symbol = t.s;
-        const price = parseFloat(t.px);
-        const size = parseFloat(t.sz);
-        const side = t.side ? 'buy' : 'sell';
-        const walletId = t.taker;
-        const timestamp = Date.now();
-        const tradeData = { symbol, price, size, side, walletId, timestamp, serverKey: SERVER_KEY };
-        broadcast({ type: "trade", data: tradeData });
-
-        if (!walletsLocal[walletId]) {
-          walletsLocal[walletId] = { id: walletId, position: 'flat', entryPrice: null, entrySize: 0, totalPnL: 0, winCount: 0, tradeCount: 0, lastUpdate: timestamp };
-        }
-        const w = walletsLocal[walletId];
-        w.lastUpdate = timestamp;
-        if (w.position === 'flat') {
-          w.position = side === 'buy' ? 'long' : 'short'; w.entryPrice = price; w.entrySize = size; w.tradeCount += 1;
-        } else if ((w.position === 'long' && side === 'sell') || (w.position === 'short' && side === 'buy')) {
-          const pnl = w.position === 'long' ? (price - w.entryPrice) * w.entrySize : (w.entryPrice - price) * w.entrySize;
-          w.totalPnL += pnl; if (pnl > 0) w.winCount += 1; w.position = 'flat'; w.entryPrice = null; w.entrySize = 0;
-        }
-      }
-      const now = Date.now();
-      if (now - lastUIBroadcast > 3000) {
-        lastUIBroadcast = now;
-        const top = Object.values(walletsLocal).sort((a, b) => Math.abs(b.totalPnL) - Math.abs(a.totalPnL)).slice(0, 50);
-        broadcast({ type: "wallets_update", data: top, stats: { activeWallets: Object.values(walletsLocal).filter(w => w.position !== 'flat').length, totalWallets: Object.keys(walletsLocal).length } });
-      }
-    } catch (e) {}
-  });
-  ws.on("close", () => setTimeout(connectBulkWS, 5000));
-}
-connectBulkWS();
 
 // --- AUTO TRADER ---
 const runAutoTrader = async () => {

@@ -24,7 +24,7 @@ interface Message {
 export const ChatAdvisor: React.FC<ChatAdvisorProps> = ({ signal, news }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
-    { id: '1', text: `مرحباً! أنا مساعدك الذكي للتداول. كيف يمكنني مساعدتك في تحليل ${signal.symbol} اليوم؟`, sender: 'bot' }
+    { id: '1', text: `Hello! I'm your AI Trading Advisor. How can I assist you with ${signal.symbol} analysis today?`, sender: 'bot' }
   ]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -82,10 +82,10 @@ export const ChatAdvisor: React.FC<ChatAdvisorProps> = ({ signal, news }) => {
                   <Bot size={18} className="text-white" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold">مساعد التداول الذكي</h3>
+                  <h3 className="text-sm font-bold">AI Trading Advisor</h3>
                   <div className="flex items-center gap-1">
                     <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                    <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-widest">متصل ومستعد</span>
+                    <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-widest">Online & Ready</span>
                   </div>
                 </div>
               </div>
@@ -146,7 +146,7 @@ export const ChatAdvisor: React.FC<ChatAdvisorProps> = ({ signal, news }) => {
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyPress={(e) => e.key === 'Enter' && handleSend()}
-                  placeholder="اسأل عن اتجاه السوق أو نوع الصفقة..."
+                  placeholder="Ask about market trends, signals, or strategy..."
                   className="w-full bg-zinc-950 border border-zinc-800 rounded-xl py-2.5 pl-4 pr-12 text-sm focus:outline-none focus:border-blue-500/50 transition-colors"
                 />
                 <button 

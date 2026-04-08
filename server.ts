@@ -10,6 +10,9 @@ import nacl from "tweetnacl";
 import bs58 from "bs58";
 import { computeIndicators, calculateTechnicalScore, getTradeDecision, RISK_CONFIG } from "./src/lib/indicators.js";
 import { fetchHistoricalData } from "./src/lib/api.js";
+import { analyzeNews, calculateNewsScore } from "./src/lib/gemini.js";
+import { analyzeSentimentAlgorithmic, calculateAlgorithmicNewsScore } from "./src/lib/sentiment.js";
+import { NewsItem } from "./src/types.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -229,6 +232,38 @@ app.use("/api/bot", botRouter);
 // News Cache
 const newsCache: Record<string, { data: any; timestamp: number }> = {};
 const CACHE_TTL = 15 * 60 * 1000;
+
+async function fetchNewsInternal(symbol: string): Promise<NewsItem[]> {
+  const cacheKey = symbol.toUpperCase();
+  if (newsCache[cacheKey] && Date.now() - newsCache[cacheKey].timestamp < CACHE_TTL) {
+    return newsCache[cacheKey].data;
+  }
+
+  const newsDataApiKey = process.env.NEWSDATA_API_KEY;
+  if (!newsDataApiKey) return [];
+
+  try {
+    const response = await axios.get('https://newsdata.io/api/1/news', {
+      params: { apikey: newsDataApiKey, q: symbol.toUpperCase(), language: 'en', category: 'business,technology' },
+      timeout: 5000
+    });
+
+    if (response.data?.status === 'success' && Array.isArray(response.data.results)) {
+      const unifiedNews = response.data.results.map((n: any) => ({
+        id: n.article_id || Math.random().toString(36).substr(2, 9),
+        title: n.title,
+        url: n.link,
+        published_at: n.pubDate,
+        source: n.source_id || 'NewsData.io',
+      }));
+      newsCache[cacheKey] = { data: unifiedNews, timestamp: Date.now() };
+      return unifiedNews;
+    }
+  } catch (error) {
+    console.error(`[News] Error fetching for ${symbol}:`, error instanceof Error ? error.message : String(error));
+  }
+  return newsCache[cacheKey]?.data || [];
+}
 
 app.get("/api/news", async (req: Request, res: Response) => {
   const symbol = (req.query.symbol as string) || "BTC";
@@ -582,12 +617,32 @@ const runAutoTrader = async () => {
         ? { size: parseFloat(pos.size), entryPrice: parseFloat(pos.price) } 
         : null;
 
-      const decision = getTradeDecision(history, botBalance, symbol, currentPosition);
+      // --- News Analysis with AI Fallback ---
+      const rawNews = await fetchNewsInternal(sym);
+      let newsScore = 0;
+      let usingAI = false;
+
+      if (rawNews.length > 0) {
+        try {
+          // Try AI Analysis first
+          const analyzedAI = await analyzeNews(rawNews);
+          newsScore = calculateNewsScore(analyzedAI);
+          usingAI = true;
+        } catch (err) {
+          // Fallback to Algorithmic Analysis if AI fails (quota/error)
+          const analyzedAlgo = analyzeSentimentAlgorithmic(rawNews);
+          newsScore = calculateAlgorithmicNewsScore(analyzedAlgo);
+          usingAI = false;
+          console.warn(`[Bot] AI Analysis failed for ${sym}, falling back to algorithmic sentiment. Error: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+
+      const decision = getTradeDecision(history, botBalance, symbol, currentPosition, newsScore);
       const currentPrice = history[history.length - 1].close;
       const ind = computeIndicators(history);
       
       // Log the decision with the regime and strategy info from our custom algorithm
-      addBotLog(`📊 ${sym} | ${decision.regime} | [${decision.strategy}] | Score: ${decision.score.toFixed(0)} | → ${decision.action}`);
+      addBotLog(`📊 ${sym} | ${decision.regime} | [${decision.strategy}] | Score: ${decision.score.toFixed(0)} | → ${decision.action} ${usingAI ? '(AI)' : '(Algo)'}`);
       if (decision.reason) addBotLog(`   ${decision.reason}`);
 
       // 1. Correlation Check: Don't open a new trade if we already have a trade in the same direction for another asset

@@ -225,13 +225,17 @@ export function getTradeDecision(
   data: PriceData[],
   balance: number,
   symbol: string,
-  currentPosition: any
+  currentPosition: any,
+  newsScore?: number
 ): TradeDecision {
   if (data.length < 200) return { action: 'HOLD', size: 0, score: 50, strategy: '-', regime: 'UNCERTAIN', confidence: 'LOW', reason: 'Insufficient data', orderType: 'market' };
 
   const ind = computeIndicators(data);
   const regime = detectMarketRegime(ind);
-  const score = calculateTechnicalScore(ind, ind.price);
+  const techScore = calculateTechnicalScore(ind, ind.price);
+  
+  // Combine technical and news scores if newsScore is provided
+  const score = newsScore !== undefined ? calculateFinalScore(techScore, newsScore) : techScore;
   
   // --- Volatility Filter (Fix: Skip if spread/volatility too low) ---
   const bbWidth = ind.bb ? (ind.bb.upper - ind.bb.lower) / ind.bb.middle * 100 : 5;

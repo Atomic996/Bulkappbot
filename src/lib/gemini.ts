@@ -134,8 +134,8 @@ export async function analyzeNews(newsItems: NewsItem[]): Promise<NewsItem[]> {
       return item;
     });
   } catch (error) {
-    console.error("Error analyzing news with Gemini:", error instanceof Error ? error.message : String(error));
-    return newsItems;
+    // Re-throw the error so the caller (like the bot) can handle fallback
+    throw error;
   }
 }
 

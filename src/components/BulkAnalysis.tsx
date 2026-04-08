@@ -1,442 +1,378 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import {
-  Trophy, Activity, ArrowUpRight, ArrowDownRight,
-  TrendingUp, TrendingDown, Zap, Shield, Target, RefreshCw
+import { 
+  Trophy, 
+  Activity, 
+  ArrowUpRight, 
+  ArrowDownRight, 
+  Wallet as WalletIcon, 
+  History,
+  TrendingUp,
+  TrendingDown,
+  Zap,
+  Shield,
+  Target,
+  AlertCircle
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
-function cn(...inputs: ClassValue[]) { return twMerge(clsx(inputs)); }
+function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
 
-// ── SVG Status Indicators (no emoji) ──
-const DotLive = () => (
-  <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
-    <circle cx="4" cy="4" r="4" fill="#22c55e" opacity="0.3"/>
-    <circle cx="4" cy="4" r="2.5" fill="#22c55e"/>
-  </svg>
-);
-const DotConnecting = () => (
-  <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
-    <circle cx="4" cy="4" r="4" fill="#eab308" opacity="0.3"/>
-    <circle cx="4" cy="4" r="2.5" fill="#eab308"/>
-  </svg>
-);
-const DotDisconnected = () => (
-  <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
-    <circle cx="4" cy="4" r="4" fill="#ef4444" opacity="0.3"/>
-    <circle cx="4" cy="4" r="2.5" fill="#ef4444"/>
-  </svg>
-);
-const ArrowUp = () => (
-  <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-    <path d="M5 1L9 5H6.5V9H3.5V5H1L5 1Z" fill="#22c55e"/>
-  </svg>
-);
-const ArrowDown = () => (
-  <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-    <path d="M5 9L1 5H3.5V1H6.5V5H9L5 9Z" fill="#ef4444"/>
-  </svg>
-);
-const IconWhale = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-    <path d="M22 12C22 12 18 6 12 6C6 6 2 12 2 12"/>
-    <path d="M2 12C2 12 6 18 12 18C15 18 17.5 16.5 19 15"/>
-    <path d="M19 15L22 18M19 15L22 12"/>
-    <circle cx="8" cy="11" r="1" fill="currentColor"/>
-  </svg>
-);
-const IconChart = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
-  </svg>
-);
-const IconUsers = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-    <circle cx="9" cy="7" r="4"/>
-    <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>
-  </svg>
-);
-const IconBook = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-    <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
-    <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
-  </svg>
-);
-const IconTrophy = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-    <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/>
-    <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/>
-    <path d="M4 22h16M8 22v-3M16 22v-3"/>
-    <path d="M6 2v7a6 6 0 0 0 12 0V2"/>
-  </svg>
-);
-
-const BACKEND_WS_URL = "wss://bulkappbot-production.up.railway.app";
+const BULK_WS_URL = "wss://exchange-ws1.bulk.trade";
 
 interface BulkTrade {
-  symbol: string; price: number; size: number;
-  side: 'buy' | 'sell'; walletId: string; timestamp: number;
+  symbol: string;
+  price: number;
+  size: number;
+  side: 'buy' | 'sell';
+  walletId: string;
+  timestamp: number;
 }
+
 interface WalletState {
-  id: string; position: 'flat' | 'long' | 'short';
-  entryPrice: number | null; entrySize: number;
-  totalPnL: number; winCount: number; tradeCount: number;
+  id: string;
+  position: 'flat' | 'long' | 'short';
+  entryPrice: number | null;
+  entrySize: number;
+  totalPnL: number;
+  winCount: number;
+  tradeCount: number;
+  history: any[];
   lastUpdate: number;
 }
 
-export const BulkAnalysis: React.FC = () => {
-  const [trades, setTrades]       = useState<BulkTrade[]>([]);
-  const [wallets, setWallets]     = useState<Record<string, WalletState>>({});
-  const [lastSync, setLastSync]   = useState<number | null>(null);
-  const [wsStatus, setWsStatus]   = useState<'connecting' | 'stable' | 'error'>('connecting');
-  const socketRef                 = useRef<WebSocket | null>(null);
-  const retryRef                  = useRef<ReturnType<typeof setTimeout>>();
-  const retryDelay                = useRef(2000);
-  const alive                     = useRef(true);
+const BACKEND_URL = "https://bulkappbot-production.up.railway.app";
+const BACKEND_WS_URL = "wss://bulkappbot-production.up.railway.app";
 
-  const connect = useCallback(() => {
-    if (!alive.current) return;
-    setWsStatus('connecting');
-    try {
-      const ws = new WebSocket(`${BACKEND_WS_URL}/ws/bulk`);
-      socketRef.current = ws;
-
-      ws.onopen = () => {
-        setWsStatus('stable');
-        retryDelay.current = 2000;
-      };
-      ws.onmessage = (e) => {
-        try {
-          const msg = JSON.parse(e.data);
-          if (msg.type === 'trade' && msg.data) {
-            setTrades(p => [msg.data, ...p].slice(0, 120));
-            setLastSync(Date.now());
-          } else if ((msg.type === 'wallets_update' || msg.type === 'init_wallets') && Array.isArray(msg.data)) {
-            const m: Record<string, WalletState> = {};
-            msg.data.forEach((w: WalletState) => { if (w?.id) m[w.id] = w; });
-            setWallets(p => ({ ...p, ...m }));
-            setLastSync(Date.now());
-          }
-        } catch {}
-      };
-      ws.onclose = () => {
-        setWsStatus('error');
-        if (alive.current) {
-          retryDelay.current = Math.min(retryDelay.current * 1.5, 15000);
-          retryRef.current = setTimeout(connect, retryDelay.current);
-        }
-      };
-      ws.onerror = () => { ws.close(); };
-    } catch {
-      setWsStatus('error');
-      retryRef.current = setTimeout(connect, retryDelay.current);
+export const BulkAnalysis: React.FC<{ compact?: boolean }> = ({ compact = false }) => {
+  const [trades, setTrades] = useState<BulkTrade[]>(() => {
+    const saved = localStorage.getItem('bulk_trades');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error("Error parsing saved trades:", e);
+      }
     }
-  }, []);
+    return [
+      { symbol: 'BTC-USD', price: 68420.5, size: 1.245, side: 'buy', walletId: '0x71C...3921', timestamp: Date.now() - 1000 },
+      { symbol: 'ETH-USD', price: 3450.12, size: 15.8, side: 'sell', walletId: '0x4A2...8812', timestamp: Date.now() - 5000 },
+      { symbol: 'SOL-USD', price: 185.45, size: 240.5, side: 'buy', walletId: '0x9B1...4401', timestamp: Date.now() - 12000 },
+      { symbol: 'BTC-USD', price: 68415.0, size: 0.85, side: 'sell', walletId: '0x2C3...1109', timestamp: Date.now() - 20000 },
+    ];
+  });
+
+  const [wallets, setWallets] = useState<Record<string, WalletState>>(() => {
+    const saved = localStorage.getItem('bulk_wallets');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error("Error parsing saved wallets:", e);
+      }
+    }
+    return {
+      '0x71C...3921': { id: '0x71C...3921', position: 'long', entryPrice: 68000, entrySize: 1.2, totalPnL: 4500.5, winCount: 12, tradeCount: 15, history: [], lastUpdate: Date.now() },
+      '0x4A2...8812': { id: '0x4A2...8812', position: 'flat', entryPrice: null, entrySize: 0, totalPnL: 12400.2, winCount: 45, tradeCount: 60, history: [], lastUpdate: Date.now() },
+      '0x9B1...4401': { id: '0x9B1...4401', position: 'long', entryPrice: 180, entrySize: 500, totalPnL: 2800.15, winCount: 8, tradeCount: 10, history: [], lastUpdate: Date.now() },
+    };
+  });
 
   useEffect(() => {
-    alive.current = true;
+    localStorage.setItem('bulk_trades', JSON.stringify(trades));
+  }, [trades]);
+
+  useEffect(() => {
+    localStorage.setItem('bulk_wallets', JSON.stringify(wallets));
+  }, [wallets]);
+
+  const [isConnected, setIsConnected] = useState(true); // Server is handling connection
+  const [lastSync, setLastSync] = useState<number | null>(null);
+  const [wsStatus, setWsStatus] = useState<'connecting' | 'stable' | 'error'>('connecting');
+
+  // 1. Internal WebSocket for Real-time Updates
+  useEffect(() => {
+    const wsUrl = `${BACKEND_WS_URL}/ws/bulk`;
+    let socket: WebSocket;
+
+    function connect() {
+      socket = new WebSocket(wsUrl);
+      setWsStatus('connecting');
+
+      socket.onopen = () => {
+        console.log("Internal Bulk WS Connected");
+        setWsStatus('stable');
+      };
+
+      socket.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          if (message.type === 'trade' && message.data) {
+            setTrades(prev => [message.data, ...prev].slice(0, 50));
+            setLastSync(Date.now());
+          } else if ((message.type === 'wallets_update' || message.type === 'init_wallets') && Array.isArray(message.data)) {
+            const walletMap: Record<string, WalletState> = {};
+            message.data.forEach((w: WalletState) => {
+              if (w && w.id) {
+                walletMap[w.id] = w;
+              }
+            });
+            setWallets(prev => ({ ...prev, ...walletMap }));
+            setLastSync(Date.now());
+          }
+        } catch (e) {
+          console.error("Error parsing internal WS message:", e);
+        }
+      };
+
+      socket.onclose = () => {
+        setWsStatus('error');
+        setTimeout(connect, 3000);
+      };
+
+      socket.onerror = () => {
+        setWsStatus('error');
+      };
+    }
+
     connect();
-    return () => {
-      alive.current = false;
-      clearTimeout(retryRef.current);
-      socketRef.current?.close();
-    };
-  }, [connect]);
+    return () => socket?.close();
+  }, []);
 
-  const topTraders = useMemo(() =>
-    (Object.values(wallets) as WalletState[])
-      .sort((a, b) => b.totalPnL - a.totalPnL).slice(0, 10),
-    [wallets]
-  );
+  const topTraders = useMemo(() => {
+    return (Object.values(wallets) as WalletState[])
+      .sort((a, b) => b.totalPnL - a.totalPnL)
+      .slice(0, 10);
+  }, [wallets]);
 
-  const stats = useMemo(() => {
-    const active = (Object.values(wallets) as WalletState[]).filter(w => w.position !== 'flat');
-    const longs  = active.filter(w => w.position === 'long').length;
-    const shorts = active.filter(w => w.position === 'short').length;
-    const total  = active.length || 1;
-    const whales = trades.filter(t => t.price * t.size > 50000).length;
-    const vol    = trades.reduce((a, t) => a + t.price * t.size, 0);
+  const marketStats = useMemo(() => {
+    const activePositions = (Object.values(wallets) as WalletState[]).filter(w => w.position !== 'flat');
+    const longs = activePositions.filter(w => w.position === 'long').length;
+    const shorts = activePositions.filter(w => w.position === 'short').length;
+    const total = activePositions.length || 1;
+    
     return {
-      longRatio:  (longs / total) * 100,
+      longRatio: (longs / total) * 100,
       shortRatio: (shorts / total) * 100,
-      active:     active.length,
-      whales,
-      volume:     vol,
+      activeWallets: activePositions.length,
+      totalVolume: trades.reduce((acc, t) => acc + (t.price * t.size), 0)
     };
   }, [wallets, trades]);
 
-  const StatusDot = wsStatus === 'stable' ? DotLive : wsStatus === 'connecting' ? DotConnecting : DotDisconnected;
-  const statusText = wsStatus === 'stable' ? 'LIVE' : wsStatus === 'connecting' ? 'CONNECTING' : 'RECONNECTING';
-  const statusColor = wsStatus === 'stable' ? 'text-emerald-400' : wsStatus === 'connecting' ? 'text-amber-400' : 'text-rose-400';
-
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#0a0a0f]">
-
-      {/* ── Top Bar ── */}
-      <div className="shrink-0 border-b border-white/[0.06] px-6 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-px h-5 bg-blue-500/60" />
-          <span className="text-[11px] font-mono font-bold text-white/80 uppercase tracking-[0.2em]">Order Book</span>
-          <span className="text-[9px] font-mono text-white/20 uppercase tracking-widest">/ Bulk Exchange</span>
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <div className={cn("animate-pulse", wsStatus !== 'stable' && "opacity-50")}>
-              <StatusDot />
+    <div className={cn(
+      "flex-1 flex flex-col gap-6 p-4 md:p-6 overflow-hidden h-full relative",
+      compact && "p-3 gap-4"
+    )}>
+      {/* Header Stats */}
+      {!compact && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="bg-zinc-900/40 border border-white/5 p-4 rounded-xl flex flex-col gap-1">
+            <div className="flex items-center gap-2 text-zinc-500 text-[10px] font-serif italic uppercase tracking-widest">
+              <Activity size={12} className="text-blue-500" />
+              Bulk Market Sentiment
             </div>
-            <span className={cn("text-[9px] font-mono font-bold tracking-widest", statusColor)}>
-              {statusText}
-            </span>
-          </div>
-          {lastSync && (
-            <span className="text-[8px] font-mono text-white/20">
-              {new Date(lastSync).toLocaleTimeString()}
-            </span>
-          )}
-          <button
-            onClick={() => { socketRef.current?.close(); }}
-            className="p-1.5 rounded border border-white/[0.06] text-white/30 hover:text-white/60 hover:border-white/20 transition-all"
-          >
-            <RefreshCw size={10} />
-          </button>
-        </div>
-      </div>
-
-      {/* ── Stats Row ── */}
-      <div className="shrink-0 grid grid-cols-2 md:grid-cols-4 border-b border-white/[0.06]">
-        {/* Sentiment */}
-        <div className="p-4 border-r border-white/[0.06]">
-          <div className="flex items-center gap-2 mb-3">
-            <IconChart />
-            <span className="text-[9px] font-mono text-white/30 uppercase tracking-widest">Sentiment</span>
-          </div>
-          <div className="flex items-center gap-2 mb-2">
-            <div className="flex-1 h-1 bg-white/5 rounded-full overflow-hidden flex">
-              <div className="h-full bg-emerald-500/80 transition-all duration-700" style={{ width: `${stats.longRatio}%` }} />
-              <div className="h-full bg-rose-500/80 transition-all duration-700" style={{ width: `${stats.shortRatio}%` }} />
+            <div className="flex items-end gap-3 mt-2">
+              <div className="flex-1 h-1.5 bg-white/5 rounded-full overflow-hidden flex">
+                <div className="h-full bg-emerald-500 transition-all duration-500" style={{ width: `${marketStats.longRatio}%` }} />
+                <div className="h-full bg-rose-500 transition-all duration-500" style={{ width: `${marketStats.shortRatio}%` }} />
+              </div>
+            </div>
+            <div className="flex justify-between text-[9px] font-mono mt-1">
+              <span className="text-emerald-500">LONG {marketStats.longRatio.toFixed(1)}%</span>
+              <span className="text-rose-500">SHORT {marketStats.shortRatio.toFixed(1)}%</span>
             </div>
           </div>
-          <div className="flex justify-between">
-            <span className="text-[9px] font-mono text-emerald-400">L {stats.longRatio.toFixed(0)}%</span>
-            <span className="text-[9px] font-mono text-rose-400">S {stats.shortRatio.toFixed(0)}%</span>
-          </div>
-        </div>
 
-        {/* Active Wallets */}
-        <div className="p-4 border-r border-white/[0.06]">
-          <div className="flex items-center gap-2 mb-3">
-            <IconUsers />
-            <span className="text-[9px] font-mono text-white/30 uppercase tracking-widest">Active</span>
-          </div>
-          <p className="text-2xl font-mono font-black text-white tabular-nums">{stats.active.toLocaleString()}</p>
-          <p className="text-[8px] font-mono text-white/20 mt-1 uppercase">Wallets in position</p>
-        </div>
-
-        {/* Whale Activity */}
-        <div className="p-4 border-r border-white/[0.06]">
-          <div className="flex items-center gap-2 mb-3">
-            <IconWhale />
-            <span className="text-[9px] font-mono text-white/30 uppercase tracking-widest">Whales</span>
-          </div>
-          <p className="text-2xl font-mono font-black text-blue-400 tabular-nums">{stats.whales}</p>
-          <p className="text-[8px] font-mono text-white/20 mt-1 uppercase">Orders &gt; $50k</p>
-        </div>
-
-        {/* Volume */}
-        <div className="p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <Zap size={12} className="text-white/30" />
-            <span className="text-[9px] font-mono text-white/30 uppercase tracking-widest">Volume</span>
-          </div>
-          <p className="text-2xl font-mono font-black text-white tabular-nums">
-            ${stats.volume >= 1_000_000
-              ? `${(stats.volume / 1_000_000).toFixed(1)}M`
-              : stats.volume >= 1000
-              ? `${(stats.volume / 1000).toFixed(0)}K`
-              : stats.volume.toFixed(0)}
-          </p>
-          <p className="text-[8px] font-mono text-white/20 mt-1 uppercase">Last {trades.length} trades</p>
-        </div>
-      </div>
-
-      {/* ── Main Grid ── */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[280px_1fr] overflow-hidden min-h-0">
-
-        {/* Left — Leaderboard */}
-        <div className="border-r border-white/[0.06] flex flex-col overflow-hidden">
-          <div className="shrink-0 px-4 py-3 border-b border-white/[0.06] flex items-center gap-2">
-            <IconTrophy />
-            <span className="text-[9px] font-mono font-bold text-white/60 uppercase tracking-[0.2em]">Top Traders</span>
+          <div className="bg-zinc-900/40 border border-white/5 p-4 rounded-xl flex flex-col gap-1">
+            <span className="text-zinc-500 text-[10px] font-serif italic uppercase tracking-widest">Active Bulk Wallets</span>
+            <p className="text-xl font-mono font-black text-white">{marketStats.activeWallets.toLocaleString()}</p>
+            <span className="text-[8px] font-mono text-zinc-600 uppercase">Tracking Live Flow</span>
           </div>
 
-          <div className="flex-1 overflow-y-auto">
-            {topTraders.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full gap-3 opacity-30 p-8">
-                <IconUsers />
-                <span className="text-[9px] font-mono text-white/40 uppercase tracking-widest text-center">
-                  {wsStatus === 'connecting' ? 'Connecting...' : wsStatus === 'error' ? 'Connection failed' : 'No data yet'}
+          <div className="bg-zinc-900/40 border border-white/5 p-4 rounded-xl flex flex-col gap-1">
+            <div className="flex items-center justify-between">
+              <span className="text-zinc-500 text-[10px] font-serif italic uppercase tracking-widest">Bulk Connection</span>
+              <div className="flex items-center gap-2">
+                <span className={cn(
+                  "text-[8px] font-mono uppercase",
+                  wsStatus === 'stable' ? "text-emerald-500" : "text-rose-500"
+                )}>
+                  {wsStatus === 'stable' ? "Direct WS" : "Connecting..."}
                 </span>
               </div>
-            ) : (
-              topTraders.map((trader, i) => {
-                const wr = trader.tradeCount > 0 ? (trader.winCount / trader.tradeCount) * 100 : 0;
-                const isPos = trader.totalPnL >= 0;
-                return (
-                  <div key={trader.id} className="px-4 py-3 border-b border-white/[0.04] flex items-center gap-3 hover:bg-white/[0.02] transition-colors group">
-                    <span className="text-[9px] font-mono text-white/20 w-4 text-right">{i + 1}</span>
+            </div>
+            <div className="flex items-center gap-2 mt-1">
+              <div className={cn(
+                "w-2 h-2 rounded-full animate-pulse", 
+                wsStatus === 'stable' ? "bg-emerald-500" : "bg-rose-500"
+              )} />
+              <p className="text-sm font-mono font-bold text-white">
+                {wsStatus === 'stable' ? "STABLE (DIRECT)" : "DISCONNECTED"}
+              </p>
+            </div>
+            <span className="text-[8px] font-mono text-zinc-600 uppercase">
+              {lastSync ? `Last Sync: ${new Date(lastSync).toLocaleTimeString()}` : BULK_WS_URL}
+            </span>
+          </div>
+
+          <div className="bg-zinc-900/40 border border-white/5 p-4 rounded-xl flex flex-col gap-1">
+            <span className="text-zinc-500 text-[10px] font-serif italic uppercase tracking-widest">Whale Activity</span>
+            <p className="text-xl font-mono font-black text-blue-500">
+              {trades.filter(t => t.price * t.size > 50000).length}
+            </p>
+            <span className="text-[8px] font-mono text-zinc-600 uppercase">Large Orders (&gt; $50k)</span>
+          </div>
+        </div>
+      )}
+
+      <div className={cn(
+        "flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 overflow-hidden",
+        compact && "flex flex-col gap-0"
+      )}>
+        {/* Left: Top 10 Traders Leaderboard */}
+        {!compact && (
+          <div className="lg:col-span-1 flex flex-col gap-4 overflow-hidden">
+            <div className="flex items-center gap-2 px-2">
+              <Trophy size={16} className="text-yellow-500" />
+              <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-white">Top 10 Bulk Traders</h3>
+            </div>
+            <div className="flex-1 bg-zinc-900/20 border border-white/5 rounded-xl overflow-y-auto custom-scrollbar">
+              <div className="divide-y divide-white/5">
+                {topTraders.map((trader, index) => (
+                  <div key={trader.id} className="p-3 flex items-center gap-4 hover:bg-white/[0.02] transition-colors">
+                    <div className="w-6 h-6 flex items-center justify-center text-[10px] font-mono font-bold text-zinc-500 border border-white/10 rounded">
+                      {index + 1}
+                    </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-[10px] font-mono text-white/70 truncate">
-                        {trader.id.slice(0, 6)}
-                        <span className="text-white/20">...</span>
-                        {trader.id.slice(-4)}
+                      <p className="text-[10px] font-mono text-zinc-300 truncate">
+                        {trader.id.slice(0, 6)}...{trader.id.slice(-4)}
                       </p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <div className="flex-1 h-px bg-white/5 rounded-full overflow-hidden">
-                          <div className="h-full bg-blue-500/40" style={{ width: `${wr}%` }} />
+                      <div className="flex items-center gap-3 mt-0.5">
+                        <div className="flex items-center gap-1">
+                          <span className="text-[7px] text-zinc-600 uppercase">W:</span>
+                          <span className="text-[8px] font-mono text-emerald-500">{trader.winCount}</span>
                         </div>
-                        <span className="text-[8px] font-mono text-white/30">{wr.toFixed(0)}%</span>
+                        <div className="flex items-center gap-1">
+                          <span className="text-[7px] text-zinc-600 uppercase">L:</span>
+                          <span className="text-[8px] font-mono text-rose-500">{trader.tradeCount - trader.winCount}</span>
+                        </div>
+                        <div className="flex items-center gap-1 ml-auto">
+                          <span className="text-[7px] text-zinc-600 uppercase">Rate:</span>
+                          <span className="text-[8px] font-mono text-blue-400">
+                            {trader.tradeCount > 0 ? ((trader.winCount / trader.tradeCount) * 100).toFixed(0) : 0}%
+                          </span>
+                        </div>
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className={cn("text-[11px] font-mono font-bold tabular-nums", isPos ? "text-emerald-400" : "text-rose-400")}>
-                        {isPos ? '+' : ''}{trader.totalPnL.toFixed(1)}
+                      <p className={cn(
+                        "text-xs font-mono font-bold",
+                        trader.totalPnL >= 0 ? "text-emerald-500" : "text-rose-500"
+                      )}>
+                        {trader.totalPnL >= 0 ? '+' : ''}{trader.totalPnL.toFixed(2)}
                       </p>
-                      <p className="text-[8px] font-mono text-white/20">{trader.tradeCount}T</p>
+                      <p className="text-[8px] font-mono text-zinc-600 uppercase">Total PnL</p>
                     </div>
                   </div>
-                );
-              })
-            )}
-          </div>
-        </div>
-
-        {/* Right — Order Book Feed */}
-        <div className="flex flex-col overflow-hidden min-h-0">
-          {/* Column Headers */}
-          <div className="shrink-0 grid grid-cols-[1fr_60px_100px_80px_100px] px-4 py-2.5 border-b border-white/[0.06]">
-            {['Symbol', 'Side', 'Price', 'Size', 'Wallet'].map((h, i) => (
-              <span key={h} className={cn("text-[8px] font-mono font-bold text-white/20 uppercase tracking-widest", i > 0 && "text-right")}>
-                {h}
-              </span>
-            ))}
-          </div>
-
-          {/* Trades List */}
-          <div className="flex-1 overflow-y-auto">
-            {trades.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full gap-3 opacity-30 p-8">
-                <IconBook />
-                <span className="text-[9px] font-mono text-white/40 uppercase tracking-widest text-center">
-                  {wsStatus === 'connecting'
-                    ? 'Connecting to exchange...'
-                    : wsStatus === 'error'
-                    ? 'Failed to connect — retrying...'
-                    : 'Waiting for trades...'}
-                </span>
-                {wsStatus === 'error' && (
-                  <span className="text-[8px] font-mono text-rose-400/50 text-center">
-                    Verify Railway server is running
-                  </span>
-                )}
+                ))}
               </div>
-            ) : (
+            </div>
+          </div>
+        )}
+
+        {/* Right: Live Bulk Trade Feed */}
+        <div className={cn(
+          "lg:col-span-2 flex flex-col gap-4 overflow-hidden",
+          compact && "flex-1 gap-2"
+        )}>
+          <div className="flex items-center justify-between px-2">
+            <div className="flex items-center gap-2">
+              <Zap size={16} className="text-blue-500" />
+              <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-white">Live Bulk Flow</h3>
+            </div>
+            {!compact && <span className="text-[8px] font-mono text-zinc-500 uppercase">Real-time Execution</span>}
+          </div>
+          <div className={cn(
+            "flex-1 bg-zinc-900/20 border border-white/5 rounded-xl overflow-hidden flex flex-col",
+            compact && "border-none bg-transparent"
+          )}>
+            <div className="grid grid-cols-5 p-3 border-b border-white/10 text-[8px] font-black uppercase tracking-widest text-zinc-500">
+              <span>Symbol</span>
+              <span>Side</span>
+              <span>Price</span>
+              <span>Size</span>
+              <span className="text-right">Wallet</span>
+            </div>
+            <div className="flex-1 overflow-y-auto custom-scrollbar">
               <AnimatePresence initial={false}>
-                {trades.map((trade, i) => {
-                  const isBuy    = trade.side === 'buy';
-                  const isWhale  = trade.price * trade.size > 50000;
-                  const val      = trade.price * trade.size;
-                  return (
-                    <motion.div
-                      key={`${trade.walletId}-${trade.timestamp}-${i}`}
-                      initial={{ opacity: 0, x: -4 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ duration: 0.15 }}
-                      className={cn(
-                        "grid grid-cols-[1fr_60px_100px_80px_100px] px-4 py-2.5 border-b border-white/[0.03]",
-                        "hover:bg-white/[0.015] transition-colors",
-                        isWhale && "bg-blue-500/[0.04]"
+                {trades.map((trade, i) => (
+                  <motion.div
+                    key={`${trade.walletId}-${trade.timestamp}-${i}`}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className="grid grid-cols-5 p-3 border-b border-white/5 items-center hover:bg-white/[0.01]"
+                  >
+                    <span className="text-[10px] font-mono font-bold text-zinc-300">{trade.symbol.split('-')[0]}</span>
+                    <div className="flex items-center gap-1">
+                      {trade.side === 'buy' ? (
+                        <ArrowUpRight size={10} className="text-emerald-500" />
+                      ) : (
+                        <ArrowDownRight size={10} className="text-rose-500" />
                       )}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-mono text-white/70">{trade.symbol}</span>
-                        {isWhale && (
-                          <span className="text-[7px] font-mono text-blue-400/70 border border-blue-500/20 px-1 py-px rounded">WHALE</span>
-                        )}
-                      </div>
-
-                      <div className="flex items-center justify-end gap-1">
-                        {isBuy ? <ArrowUp /> : <ArrowDown />}
-                        <span className={cn("text-[9px] font-mono font-bold", isBuy ? "text-emerald-400" : "text-rose-400")}>
-                          {isBuy ? 'BUY' : 'SELL'}
-                        </span>
-                      </div>
-
-                      <span className="text-[10px] font-mono text-white/60 text-right tabular-nums">
-                        ${trade.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      <span className={cn(
+                        "text-[9px] font-black uppercase tracking-tighter",
+                        trade.side === 'buy' ? "text-emerald-500" : "text-rose-500"
+                      )}>
+                        {trade.side}
                       </span>
-
-                      <span className="text-[10px] font-mono text-white/40 text-right tabular-nums">
-                        {trade.size.toFixed(4)}
-                      </span>
-
-                      <div className="text-right">
-                        <span className="text-[9px] font-mono text-white/30">
-                          {trade.walletId.slice(0, 6)}..{trade.walletId.slice(-3)}
-                        </span>
-                        <p className="text-[8px] font-mono text-white/15">
-                          ${val >= 1000 ? `${(val / 1000).toFixed(0)}K` : val.toFixed(0)}
-                        </p>
-                      </div>
-                    </motion.div>
-                  );
-                })}
+                    </div>
+                    <span className="text-[10px] font-mono text-zinc-400">${(trade.price || 0).toLocaleString()}</span>
+                    <span className="text-[10px] font-mono text-zinc-400">{trade.size.toFixed(compact ? 2 : 4)}</span>
+                    <span className="text-[9px] font-mono text-zinc-600 text-right truncate">
+                      {trade.walletId.slice(0, compact ? 4 : 8)}...
+                    </span>
+                  </motion.div>
+                ))}
               </AnimatePresence>
-            )}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* ── Insights Footer ── */}
-      <div className="shrink-0 border-t border-white/[0.06] grid grid-cols-1 md:grid-cols-3">
-        <InsightCard
-          icon={<Shield size={12} className="text-emerald-500/70" />}
-          title="Smart Money"
-          desc="Top 5 traders increasing LONG exposure on BTC."
-          color="emerald"
-        />
-        <InsightCard
-          icon={<Target size={12} className="text-blue-500/70" />}
-          title="Liquidation Zone"
-          desc="Short cluster detected near $68,400 resistance."
-          color="blue"
-          border
-        />
-        <InsightCard
-          icon={<Zap size={12} className="text-amber-500/70" />}
-          title="Volume Spike"
-          desc="Bulk flow +240% above 5-min average."
-          color="amber"
-          border
-        />
-      </div>
+      {/* Footer: Smart Insights */}
+      {!compact && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 shrink-0">
+          <InsightCard 
+            icon={<Shield size={14} className="text-emerald-500" />}
+            title="Smart Money Accumulation"
+            desc="Top 5 traders are currently increasing LONG exposure on BTC."
+          />
+          <InsightCard 
+            icon={<Target size={14} className="text-blue-500" />}
+            title="Liquidation Risk"
+            desc="High concentration of SHORT positions near $68,400 level."
+          />
+          <InsightCard 
+            icon={<Zap size={14} className="text-yellow-500" />}
+            title="Volatility Alert"
+            desc="Bulk volume spike detected in the last 5 minutes (+240%)."
+          />
+        </div>
+      )}
     </div>
   );
 };
 
-const InsightCard: React.FC<{
-  icon: React.ReactNode; title: string; desc: string;
-  color: 'emerald' | 'blue' | 'amber'; border?: boolean;
-}> = ({ icon, title, desc, color, border }) => {
-  const accent = { emerald: 'text-emerald-400', blue: 'text-blue-400', amber: 'text-amber-400' }[color];
-  return (
-    <div className={cn("p-4 flex items-start gap-3 hover:bg-white/[0.015] transition-colors", border && "border-l border-white/[0.06]")}>
-      <div className="mt-0.5 opacity-70">{icon}</div>
-      <div>
-        <h4 className={cn("text-[9px] font-mono font-bold uppercase tracking-widest", accent)}>{title}</h4>
-        <p className="text-[9px] font-mono text-white/30 mt-1 leading-relaxed">{desc}</p>
-      </div>
+const InsightCard: React.FC<{ icon: React.ReactNode; title: string; desc: string }> = ({ icon, title, desc }) => (
+  <div className="bg-white/[0.02] border border-white/5 p-3 rounded-lg flex gap-3 items-start">
+    <div className="mt-0.5">{icon}</div>
+    <div className="flex flex-col gap-0.5">
+      <h4 className="text-[9px] font-black uppercase tracking-widest text-zinc-200">{title}</h4>
+      <p className="text-[10px] text-zinc-500 leading-tight">{desc}</p>
     </div>
-  );
-};
+  </div>
+);

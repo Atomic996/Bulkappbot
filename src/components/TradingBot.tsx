@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useWalletModal } from '@solana/wallet-adapter-react-ui';
+import bs58 from 'bs58';
 import axios from 'axios';
 import { 
   Play, 
@@ -18,7 +19,6 @@ import {
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import bs58 from 'bs58';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -32,6 +32,7 @@ interface BotStatus {
   logs: string[];
   hasSession: boolean;
   address: string | null;
+  orderType?: 'market' | 'limit' | 'auto';
 }
 
 const BACKEND_URL = typeof window !== 'undefined' ? window.location.origin : "";
@@ -147,14 +148,14 @@ export const TradingBot: React.FC = () => {
       const encodedMessage = new TextEncoder().encode(message);
       const signed = await signMessage(encodedMessage);
       
-      // Convert signature to base64
-      const signatureBase64 = btoa(String.fromCharCode.apply(null, Array.from(signed)));
+      // Convert signature to base58 (Solana standard)
+      const signature = bs58.encode(signed);
 
       // 3. Send signature back to server
       await axios.post(`${BACKEND_URL}/api/bot/auth/start`, {
         address: publicKey?.toBase58(),
         message,
-        signature: signatureBase64
+        signature: signature
       });
       
       fetchStatus();
@@ -188,6 +189,21 @@ export const TradingBot: React.FC = () => {
       setError(msg);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const toggleOrderType = async () => {
+    try {
+      const types: ('market' | 'limit' | 'auto')[] = ['market', 'limit', 'auto'];
+      const currentIndex = types.indexOf(status.orderType || 'auto');
+      const nextType = types[(currentIndex + 1) % types.length];
+      
+      const r = await axios.post(`${BACKEND_URL}/api/bot/settings`, { orderType: nextType });
+      if (r.data.success) {
+        setStatus(prev => ({ ...prev, orderType: r.data.orderType }));
+      }
+    } catch (e) {
+      console.error("Settings update error:", e);
     }
   };
 
@@ -243,17 +259,32 @@ export const TradingBot: React.FC = () => {
           </button>
           
           {status.hasSession && (
-            <button
-              onClick={stopBot}
-              className={cn(
-                "px-6 py-3 rounded-sm font-black uppercase tracking-widest text-[10px] transition-all border",
-                status.enabled 
-                  ? "bg-rose-500/10 border-rose-500/30 text-rose-500 hover:bg-rose-500/20" 
-                  : "bg-emerald-500/10 border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/20"
-              )}
-            >
-              {status.enabled ? "Disable Auto-Trade" : "Enable Auto-Trade"}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={toggleOrderType}
+                className={cn(
+                  "px-4 py-3 rounded-sm font-black uppercase tracking-widest text-[10px] transition-all border",
+                  status.orderType === 'auto' 
+                    ? "bg-purple-500/10 border-purple-500/30 text-purple-500 hover:bg-purple-500/20"
+                    : status.orderType === 'limit'
+                    ? "bg-blue-500/10 border-blue-500/30 text-blue-500 hover:bg-blue-500/20" 
+                    : "bg-zinc-900 border-white/10 text-zinc-500 hover:text-white"
+                )}
+              >
+                Type: {status.orderType?.toUpperCase() || 'AUTO'}
+              </button>
+              <button
+                onClick={stopBot}
+                className={cn(
+                  "px-6 py-3 rounded-sm font-black uppercase tracking-widest text-[10px] transition-all border",
+                  status.enabled 
+                    ? "bg-rose-500/10 border-rose-500/30 text-rose-500 hover:bg-rose-500/20" 
+                    : "bg-emerald-500/10 border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/20"
+                )}
+              >
+                {status.enabled ? "Disable Auto-Trade" : "Enable Auto-Trade"}
+              </button>
+            </div>
           )}
 
           {connected && (

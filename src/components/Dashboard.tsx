@@ -384,7 +384,7 @@ export const Dashboard: React.FC = () => {
                     {tab === 'bulk' && <RefreshCw size={12} className={activeTab === tab ? "text-white" : ""} />}
                     {tab === 'news' && <Newspaper size={12} className={activeTab === tab ? "text-white" : ""} />}
                     {tab === 'bot' && <Cpu size={12} className={activeTab === tab ? "text-white" : ""} />}
-                    <span>{tab === 'bulk' ? 'Order Book' : tab === 'bot' ? 'Auto-Bot' : tab}</span>
+                    <span>{tab === 'bulk' ? 'Bulk Flow' : tab === 'bot' ? 'Auto-Bot' : tab}</span>
                   </div>
                   {activeTab === tab && (
                     <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-white shadow-[0_0_10px_rgba(255,255,255,0.5)]" />
@@ -731,6 +731,26 @@ export const Dashboard: React.FC = () => {
                       </button>
                     ))}
                   </div>
+                </div>
+
+                {/* Live Bulk Flow Section */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between px-2">
+                    <span className="text-[9px] font-black text-zinc-600 uppercase tracking-[0.2em]">Bulk Flow Live</span>
+                    <div className="h-px flex-1 mx-4 bg-white/5" />
+                  </div>
+                  <div className="h-[300px] rounded-sm border border-white/10 bg-white/[0.02] overflow-hidden">
+                    <BulkAnalysis compact={true} />
+                  </div>
+                  <button 
+                    onClick={() => {
+                      setActiveTab('bulk');
+                      setIsSidebarOpen(false);
+                    }}
+                    className="w-full py-2 text-[8px] font-black text-zinc-500 uppercase tracking-widest hover:text-white transition-colors"
+                  >
+                    View Full Analysis
+                  </button>
                 </div>
 
                 {/* AI Chatbot Section */}

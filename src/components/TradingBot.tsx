@@ -37,6 +37,7 @@ interface BotStatus {
   positions: any[];
   logs: string[];
   hasSession: boolean;
+  exchangeConnected: boolean;
   address: string | null;
   orderType?: 'market' | 'limit' | 'auto';
 }
@@ -56,6 +57,7 @@ export const TradingBot: React.FC = () => {
       positions: [],
       logs: [],
       hasSession: saved === 'true',
+      exchangeConnected: false,
       address: typeof window !== 'undefined' ? localStorage.getItem('bot_address') : null
     };
   });
@@ -367,6 +369,18 @@ export const TradingBot: React.FC = () => {
         <div className="flex items-center gap-4">
           {status.hasSession && (
             <div className="flex items-center gap-2">
+              <div className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[8px] font-black uppercase tracking-widest",
+                status.exchangeConnected 
+                  ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-500" 
+                  : "bg-rose-500/10 border-rose-500/30 text-rose-500"
+              )}>
+                <div className={cn(
+                  "w-1.5 h-1.5 rounded-full",
+                  status.exchangeConnected ? "bg-emerald-500 animate-pulse" : "bg-rose-500"
+                )} />
+                {status.exchangeConnected ? "Exchange Connected" : "Exchange Disconnected"}
+              </div>
               <button
                 onClick={fetchStatus}
                 disabled={isLoading}

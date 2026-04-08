@@ -65,7 +65,6 @@ app.use(express.json());
 const botRouter = express.Router();
 
 botRouter.get("/status", (req: Request, res: Response) => {
-  console.log(`[API] Status requested. Balance: $${botBalance}, Session: ${!!bulkClient}`);
   res.json({
     enabled: botEnabled,
     status: botStatus,
@@ -74,6 +73,7 @@ botRouter.get("/status", (req: Request, res: Response) => {
     logs: botLogs,
     address: botAddress,
     hasSession: !!bulkClient,
+    exchangeConnected: bulkClient?.isWsConnected() || false,
     orderType: botOrderType
   });
 });
@@ -414,6 +414,10 @@ class BulkClient {
   setToken(token: string) { this.token = token; }
   setAddress(address: string) { this.address = address; botAddress = address; }
 
+  isWsConnected() {
+    return this.ws && this.ws.readyState === WebSocket.OPEN;
+  }
+
   updateSigner(keypair: WasmKeypair) {
     this.signer = new WasmSigner(keypair);
     addBotLog("Trading Signer updated to Agent Wallet.");
@@ -485,38 +489,53 @@ class BulkClient {
   }
 
   connect() {
-    if (!this.token) return;
+    if (!this.token) {
+      console.warn("[BulkWS] Cannot connect: No token available.");
+      return;
+    }
+    
+    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
+
+    console.log(`[BulkWS] Connecting to ${BULK_WS_URL} for ${this.address}...`);
+    addBotLog("Connecting to Exchange...");
+
     this.ws = new WebSocket(BULK_WS_URL, { 
       headers: { 
         "Authorization": `Bearer ${this.token}`, 
-        "Origin": ORIGIN_URL 
+        "Origin": ORIGIN_URL,
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
       } 
     });
+
     this.ws.on("open", () => {
-      console.log(`[BulkWS] Session Connected for ${this.address}`);
-      this.ws?.send(JSON.stringify({ method: "subscribe", id: 1, subscription: [{ type: "account", user: this.address }] }));
-      addBotLog("Bot Session Connected.");
+      console.log(`[BulkWS] Connected successfully for ${this.address}`);
+      this.ws?.send(JSON.stringify({ 
+        method: "subscribe", 
+        id: 1, 
+        subscription: [{ type: "account", user: this.address }] 
+      }));
+      addBotLog("✅ Connected to Exchange.");
+      broadcast({ type: "bot_update", data: { exchangeConnected: true } });
     });
+
     this.ws.on("message", (data) => {
       try {
         const msg = JSON.parse(data.toString());
         
-        // Log all responses for debugging
         if (msg.id) {
-          console.log(`[BulkWS] Response to ID ${msg.id}:`, JSON.stringify(msg).slice(0, 200));
+          console.log(`[BulkWS] Response ID ${msg.id}:`, JSON.stringify(msg).slice(0, 200));
           if (msg.status === "error") {
             addBotLog(`❌ Trade Rejected: ${msg.error || "Unknown error"}`);
           } else if (msg.status === "ok") {
-            addBotLog(`✅ Trade Confirmed by Exchange.`);
+            addBotLog(`✅ Trade Confirmed.`);
           }
         }
 
         if (msg.type === "account") {
-          console.log(`[BulkWS] Account Update Received: ${msg.data?.type}`);
           if (msg.data?.type === "accountSnapshot" || msg.data?.type === "accountUpdate") {
             const margin = msg.data.margin || {};
-            
-            // Try different balance fields as the API might vary
             const newBalance = parseFloat(
               margin.availableBalance || 
               margin.totalMarginBalance || 
@@ -527,14 +546,10 @@ class BulkClient {
             
             if (!isNaN(newBalance)) {
               botBalance = newBalance;
-              console.log(`[BulkWS] Balance Updated for ${this.address}: $${botBalance}`);
-            } else {
-              console.warn(`[BulkWS] Received invalid balance data:`, margin);
             }
             
             if (msg.data.positions) {
               botPositions = msg.data.positions;
-              console.log(`[BulkWS] Positions Updated for ${this.address}: ${botPositions.length} active`);
             }
             
             broadcast({ 
@@ -543,27 +558,47 @@ class BulkClient {
                 balance: botBalance, 
                 positions: botPositions,
                 address: this.address,
-                hasSession: true
+                hasSession: true,
+                exchangeConnected: true
               } 
             });
           }
-        } else if (msg.type === "error") {
-          console.error(`[BulkWS] Error for ${this.address}:`, msg.message);
-          addBotLog(`❌ Exchange Error: ${msg.message}`);
-        } else if (msg.type === "info") {
-          console.log(`[BulkWS] Info:`, msg.message);
         }
       } catch (e) {
         console.error("[BulkWS] Message Parse Error:", e);
       }
     });
-    this.ws.on("close", () => { if (botEnabled) setTimeout(() => this.connect(), 5000); });
+
+    this.ws.on("error", (err) => {
+      console.error("[BulkWS] WebSocket Error:", err.message);
+      addBotLog(`⚠️ Exchange Connection Error: ${err.message}`);
+      broadcast({ type: "bot_update", data: { exchangeConnected: false } });
+    });
+
+    this.ws.on("close", () => { 
+      console.log("[BulkWS] Connection closed.");
+      broadcast({ type: "bot_update", data: { exchangeConnected: false } });
+      // Auto-reconnect if session is still active
+      if (this.token) {
+        setTimeout(() => this.connect(), 5000);
+      }
+    });
   }
 
   async sendActions(actions: any[]) {
+    // Ensure we are connected before sending
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      addBotLog("❌ Cannot send trade: WebSocket not connected.");
-      return;
+      if (this.token) {
+        addBotLog("🔄 Reconnecting to Exchange...");
+        this.connect();
+        // Wait a bit for connection
+        await new Promise(r => setTimeout(r, 2000));
+      }
+      
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+        addBotLog("❌ Trade failed: Not connected to Exchange. Please try again in a moment.");
+        return;
+      }
     }
     
     try {

@@ -261,23 +261,31 @@ export const TradingBot: React.FC = () => {
 
         <div className="flex items-center gap-4">
           <button
-            onClick={startBotWithWallet}
-            disabled={isLoading || status.enabled}
+            onClick={status.hasSession ? closeSession : startBotWithWallet}
+            disabled={isLoading}
             className={cn(
               "px-8 py-3 rounded-full font-black uppercase tracking-[0.2em] text-[10px] transition-all flex items-center gap-3 shadow-2xl",
-              status.enabled 
+              status.hasSession
+                ? "bg-rose-500/10 text-rose-500 border border-rose-500/30 hover:bg-rose-500/20"
+                : status.enabled 
                 ? "bg-emerald-500/20 text-emerald-500 border border-emerald-500/30 cursor-default" 
                 : "bg-white text-black hover:bg-zinc-200 shadow-white/20 disabled:opacity-50 disabled:cursor-not-allowed"
             )}
           >
             {isLoading ? (
               <Activity size={16} className="animate-spin" />
+            ) : status.hasSession ? (
+              <Square size={16} className="group-hover:fill-rose-500/20" />
             ) : status.enabled ? (
               <ShieldCheck size={16} />
             ) : (
               <Play size={16} fill="currentColor" />
             )}
-            {status.enabled ? "Auto-Trading Active" : (connected ? "Authorize & Start" : "Connect & Start")}
+            {status.hasSession 
+              ? "Logout & Disconnect" 
+              : status.enabled 
+              ? "Auto-Trading Active" 
+              : (connected ? "Authorize & Start" : "Connect & Start")}
           </button>
           
           {status.hasSession && (
@@ -307,17 +315,6 @@ export const TradingBot: React.FC = () => {
                 {status.enabled ? "Stop Agent" : "Resume Agent"}
               </button>
             </div>
-          )}
-
-          {connected && (
-            <button
-              onClick={closeSession}
-              className="px-6 py-3 bg-zinc-900 border border-white/10 rounded-full hover:bg-zinc-800 transition-all text-zinc-500 hover:text-rose-500 flex items-center gap-2 group"
-              title="Logout & Close Session"
-            >
-              <span className="text-[9px] font-black uppercase tracking-widest">Logout</span>
-              <Square size={14} className="group-hover:fill-rose-500/20" />
-            </button>
           )}
         </div>
       </div>

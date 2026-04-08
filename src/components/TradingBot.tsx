@@ -62,6 +62,14 @@ export const TradingBot: React.FC = () => {
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [isWasmReady, setIsWasmReady] = React.useState(false);
+  const [activeTab, setActiveTab] = React.useState<'auto' | 'manual'>('auto');
+  const [manualTrade, setManualTrade] = React.useState({
+    symbol: 'BTC-USD',
+    side: 'buy' as 'buy' | 'sell',
+    size: '0.01',
+    price: '0',
+    type: 'market' as 'market' | 'limit'
+  });
 
   React.useEffect(() => {
     const initWasm = async () => {
@@ -313,6 +321,36 @@ export const TradingBot: React.FC = () => {
     }
   };
 
+  const executeManualTrade = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      await axios.post(`${BACKEND_URL}/api/bot/trade`, {
+        ...manualTrade,
+        size: parseFloat(manualTrade.size),
+        price: parseFloat(manualTrade.price)
+      });
+      fetchStatus();
+    } catch (err: any) {
+      setError(err.response?.data?.error || "Trade failed");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const closePosition = async (symbol: string, size: number, side: string) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      await axios.post(`${BACKEND_URL}/api/bot/close`, { symbol, size, side });
+      fetchStatus();
+    } catch (err: any) {
+      setError(err.response?.data?.error || "Close failed");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className="flex-1 flex flex-col gap-6 p-4 md:p-8 overflow-hidden h-full">
       {/* Header Section */}
@@ -479,139 +517,320 @@ export const TradingBot: React.FC = () => {
       )}
 
       {status.hasSession && (
-        <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_350px] gap-8 overflow-hidden">
-          {/* Left: Bot Status & Positions */}
-          <div className="flex flex-col gap-8 overflow-hidden">
-            {/* Stats Grid */}
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              <div className="p-6 bg-zinc-900/40 border border-white/5 rounded-sm flex flex-col gap-2">
-                <span className="text-[9px] font-black text-zinc-600 uppercase tracking-widest">Bot Status</span>
-                <div className="flex items-center gap-2">
-                  <div className={cn(
-                    "w-2 h-2 rounded-full",
-                    status.enabled ? "bg-emerald-500 animate-pulse" : "bg-zinc-700"
-                  )} />
-                  <span className={cn(
-                    "text-lg font-mono font-black uppercase tracking-tighter",
-                    status.enabled ? "text-emerald-500" : "text-zinc-500"
-                  )}>{status.status}</span>
-                </div>
-              </div>
-              <div className="p-6 bg-zinc-900/40 border border-white/5 rounded-sm flex flex-col gap-2">
-                <span className="text-[9px] font-black text-zinc-600 uppercase tracking-widest">Available Balance</span>
-                <div className="flex items-center gap-2">
-                  <Wallet size={16} className="text-blue-500" />
-                  <span className="text-lg font-mono font-black text-white uppercase tracking-tighter">
-                    ${(status.balance || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                  </span>
-                </div>
-              </div>
-              <div className="hidden md:flex p-6 bg-zinc-900/40 border border-white/5 rounded-sm flex-col gap-2">
-                <span className="text-[9px] font-black text-zinc-600 uppercase tracking-widest">Active Positions</span>
-                <div className="flex items-center gap-2">
-                  <Activity size={16} className="text-purple-500" />
-                  <span className="text-lg font-mono font-black text-white uppercase tracking-tighter">
-                    {status.positions.length}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Positions Table */}
-            <div className="flex-1 flex flex-col gap-4 overflow-hidden">
-              <div className="flex items-center justify-between px-2">
-                <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-white">Active Bot Positions</h3>
-                <span className="text-[8px] font-mono text-zinc-500 uppercase">Live from Bulk.trade</span>
-              </div>
-              <div className="flex-1 bg-zinc-900/20 border border-white/5 rounded-sm overflow-hidden flex flex-col">
-                <div className="grid grid-cols-5 p-4 border-b border-white/10 text-[8px] font-black uppercase tracking-widest text-zinc-500">
-                  <span>Asset</span>
-                  <span>Side</span>
-                  <span>Size</span>
-                  <span>Entry</span>
-                  <span className="text-right">PnL</span>
-                </div>
-                <div className="flex-1 overflow-y-auto custom-scrollbar">
-                  {status.positions.length === 0 ? (
-                    <div className="h-full flex flex-col items-center justify-center text-zinc-600 gap-2">
-                      <Activity size={24} className="opacity-20" />
-                      <span className="text-[10px] font-black uppercase tracking-widest">No active positions</span>
-                    </div>
-                  ) : (
-                    status.positions.map((pos, i) => {
-                      const size = parseFloat(pos.size);
-                      const pnl = parseFloat(pos.unrealizedPnl || '0');
-                      return (
-                        <div key={i} className="grid grid-cols-5 p-4 border-b border-white/5 items-center hover:bg-white/[0.02] transition-colors">
-                          <span className="text-xs font-mono font-bold text-white">{pos.symbol}</span>
-                          <div className="flex items-center gap-1">
-                            {size > 0 ? (
-                              <TrendingUp size={12} className="text-emerald-500" />
-                            ) : (
-                              <TrendingDown size={12} className="text-rose-500" />
-                            )}
-                            <span className={cn(
-                              "text-[10px] font-black uppercase tracking-tighter",
-                              size > 0 ? "text-emerald-500" : "text-rose-500"
-                            )}>
-                              {size > 0 ? "LONG" : "SHORT"}
-                            </span>
-                          </div>
-                          <span className="text-xs font-mono text-zinc-400">{Math.abs(size).toFixed(4)}</span>
-                          <span className="text-xs font-mono text-zinc-400">${parseFloat(pos.price || '0').toLocaleString()}</span>
-                          <span className={cn(
-                            "text-xs font-mono font-bold text-right",
-                            pnl >= 0 ? "text-emerald-500" : "text-rose-500"
-                          )}>
-                            {pnl >= 0 ? '+' : ''}{pnl.toFixed(2)}
-                          </span>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-            </div>
+        <div className="flex-1 flex flex-col gap-8 overflow-hidden">
+          {/* Tab Switcher */}
+          <div className="flex items-center gap-4 border-b border-white/5 pb-4">
+            <button
+              onClick={() => setActiveTab('auto')}
+              className={cn(
+                "px-6 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all border",
+                activeTab === 'auto' 
+                  ? "bg-blue-500/10 border-blue-500/30 text-blue-500" 
+                  : "bg-zinc-900 border-white/5 text-zinc-500 hover:text-white"
+              )}
+            >
+              Auto Bot
+            </button>
+            <button
+              onClick={() => setActiveTab('manual')}
+              className={cn(
+                "px-6 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all border",
+                activeTab === 'manual' 
+                  ? "bg-purple-500/10 border-purple-500/30 text-purple-500" 
+                  : "bg-zinc-900 border-white/5 text-zinc-500 hover:text-white"
+              )}
+            >
+              Manual Trade
+            </button>
           </div>
 
-          {/* Right: Bot Logs */}
-          <div className="flex flex-col gap-4 overflow-hidden">
-            <div className="flex items-center gap-2 px-2">
-              <Terminal size={16} className="text-zinc-500" />
-              <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-white">Execution Logs</h3>
-            </div>
-            <div className="flex-1 bg-zinc-950 border border-white/10 rounded-sm p-4 font-mono text-[10px] overflow-y-auto custom-scrollbar flex flex-col-reverse gap-2 shadow-inner">
-              {status.logs.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-zinc-800 gap-2">
-                  <Terminal size={20} />
-                  <span className="italic">Awaiting network activity...</span>
-                </div>
-              ) : (
-                status.logs.map((log, i) => (
-                  <div key={i} className="flex gap-3 animate-in fade-in slide-in-from-left-2 duration-300">
-                    <span className="text-zinc-600 shrink-0 select-none">{log.split(']')[0]}]</span>
-                    <span className={cn(
-                      "leading-relaxed",
-                      log.includes('Placed') ? "text-emerald-400 font-bold" :
-                      log.includes('Closing') ? "text-blue-400" :
-                      log.includes('Failed') ? "text-rose-400 font-bold" : 
-                      log.includes('Analyzing') ? "text-zinc-500 italic" : "text-zinc-400"
-                    )}>
-                      {log.split(']')[1]}
-                    </span>
+          <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_350px] gap-8 overflow-hidden">
+            {/* Left Column */}
+            <div className="flex flex-col gap-8 overflow-hidden">
+              {activeTab === 'auto' ? (
+                <>
+                  {/* Stats Grid */}
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    <div className="p-6 bg-zinc-900/40 border border-white/5 rounded-sm flex flex-col gap-2">
+                      <span className="text-[9px] font-black text-zinc-600 uppercase tracking-widest">Bot Status</span>
+                      <div className="flex items-center gap-2">
+                        <div className={cn(
+                          "w-2 h-2 rounded-full",
+                          status.enabled ? "bg-emerald-500 animate-pulse" : "bg-zinc-700"
+                        )} />
+                        <span className={cn(
+                          "text-lg font-mono font-black uppercase tracking-tighter",
+                          status.enabled ? "text-emerald-500" : "text-zinc-500"
+                        )}>{status.status}</span>
+                      </div>
+                    </div>
+                    <div className="p-6 bg-zinc-900/40 border border-white/5 rounded-sm flex flex-col gap-2">
+                      <span className="text-[9px] font-black text-zinc-600 uppercase tracking-widest">Available Balance</span>
+                      <div className="flex items-center gap-2">
+                        <Wallet size={16} className="text-blue-500" />
+                        <span className="text-lg font-mono font-black text-white uppercase tracking-tighter">
+                          ${(status.balance || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="hidden md:flex p-6 bg-zinc-900/40 border border-white/5 rounded-sm flex-col gap-2">
+                      <span className="text-[9px] font-black text-zinc-600 uppercase tracking-widest">Active Positions</span>
+                      <div className="flex items-center gap-2">
+                        <Activity size={16} className="text-purple-500" />
+                        <span className="text-lg font-mono font-black text-white uppercase tracking-tighter">
+                          {status.positions.length}
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                ))
+
+                  {/* Positions Table */}
+                  <div className="flex-1 flex flex-col gap-4 overflow-hidden">
+                    <div className="flex items-center justify-between px-2">
+                      <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-white">Active Bot Positions</h3>
+                      <span className="text-[8px] font-mono text-zinc-500 uppercase">Live from Bulk.trade</span>
+                    </div>
+                    <div className="flex-1 bg-zinc-900/20 border border-white/5 rounded-sm overflow-hidden flex flex-col">
+                      <div className="grid grid-cols-6 p-4 border-b border-white/10 text-[8px] font-black uppercase tracking-widest text-zinc-500">
+                        <span>Asset</span>
+                        <span>Side</span>
+                        <span>Size</span>
+                        <span>Entry</span>
+                        <span className="text-right">PnL</span>
+                        <span className="text-right">Action</span>
+                      </div>
+                      <div className="flex-1 overflow-y-auto custom-scrollbar">
+                        {status.positions.length === 0 ? (
+                          <div className="h-full flex flex-col items-center justify-center text-zinc-600 gap-2">
+                            <Activity size={24} className="opacity-20" />
+                            <span className="text-[10px] font-black uppercase tracking-widest">No active positions</span>
+                          </div>
+                        ) : (
+                          status.positions.map((pos, i) => {
+                            const size = parseFloat(pos.size);
+                            const pnl = parseFloat(pos.unrealizedPnl || '0');
+                            return (
+                              <div key={i} className="grid grid-cols-6 p-4 border-b border-white/5 items-center hover:bg-white/[0.02] transition-colors">
+                                <span className="text-xs font-mono font-bold text-white">{pos.symbol}</span>
+                                <div className="flex items-center gap-1">
+                                  {size > 0 ? (
+                                    <TrendingUp size={12} className="text-emerald-500" />
+                                  ) : (
+                                    <TrendingDown size={12} className="text-rose-500" />
+                                  )}
+                                  <span className={cn(
+                                    "text-[10px] font-black uppercase tracking-tighter",
+                                    size > 0 ? "text-emerald-500" : "text-rose-500"
+                                  )}>
+                                    {size > 0 ? "LONG" : "SHORT"}
+                                  </span>
+                                </div>
+                                <span className="text-xs font-mono text-zinc-400">{Math.abs(size).toFixed(4)}</span>
+                                <span className="text-xs font-mono text-zinc-400">${parseFloat(pos.price || '0').toLocaleString()}</span>
+                                <span className={cn(
+                                  "text-xs font-mono font-bold text-right",
+                                  pnl >= 0 ? "text-emerald-500" : "text-rose-500"
+                                )}>
+                                  {pnl >= 0 ? '+' : ''}{pnl.toFixed(2)}
+                                </span>
+                                <div className="text-right">
+                                  <button
+                                    onClick={() => closePosition(pos.symbol, size, size > 0 ? 'long' : 'short')}
+                                    disabled={isLoading}
+                                    className="text-[8px] font-black uppercase tracking-widest text-rose-500 hover:text-rose-400 underline"
+                                  >
+                                    Close
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="flex-1 flex flex-col gap-8">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    {/* Manual Trade Form */}
+                    <div className="p-8 bg-zinc-900/40 border border-white/5 rounded-sm flex flex-col gap-6">
+                      <div className="flex items-center gap-2">
+                        <Zap size={16} className="text-purple-500" />
+                        <h3 className="text-[10px] font-black uppercase tracking-widest text-white">New Manual Order</h3>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="flex flex-col gap-2">
+                          <label className="text-[8px] font-black uppercase tracking-widest text-zinc-500">Asset</label>
+                          <select
+                            value={manualTrade.symbol}
+                            onChange={(e) => setManualTrade(prev => ({ ...prev, symbol: e.target.value }))}
+                            className="bg-zinc-950 border border-white/10 rounded-sm p-3 text-xs font-mono text-white outline-none focus:border-purple-500/50 transition-colors"
+                          >
+                            <option value="BTC-USD">BTC-USD</option>
+                            <option value="ETH-USD">ETH-USD</option>
+                            <option value="SOL-USD">SOL-USD</option>
+                          </select>
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <label className="text-[8px] font-black uppercase tracking-widest text-zinc-500">Order Type</label>
+                          <select
+                            value={manualTrade.type}
+                            onChange={(e) => setManualTrade(prev => ({ ...prev, type: e.target.value as any }))}
+                            className="bg-zinc-950 border border-white/10 rounded-sm p-3 text-xs font-mono text-white outline-none focus:border-purple-500/50 transition-colors"
+                          >
+                            <option value="market">Market</option>
+                            <option value="limit">Limit</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="flex flex-col gap-2">
+                          <label className="text-[8px] font-black uppercase tracking-widest text-zinc-500">Side</label>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => setManualTrade(prev => ({ ...prev, side: 'buy' }))}
+                              className={cn(
+                                "flex-1 py-3 rounded-sm text-[10px] font-black uppercase tracking-widest transition-all border",
+                                manualTrade.side === 'buy' 
+                                  ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-500" 
+                                  : "bg-zinc-950 border-white/10 text-zinc-500 hover:text-white"
+                              )}
+                            >
+                              Buy
+                            </button>
+                            <button
+                              onClick={() => setManualTrade(prev => ({ ...prev, side: 'sell' }))}
+                              className={cn(
+                                "flex-1 py-3 rounded-sm text-[10px] font-black uppercase tracking-widest transition-all border",
+                                manualTrade.side === 'sell' 
+                                  ? "bg-rose-500/10 border-rose-500/30 text-rose-500" 
+                                  : "bg-zinc-950 border-white/10 text-zinc-500 hover:text-white"
+                              )}
+                            >
+                              Sell
+                            </button>
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <label className="text-[8px] font-black uppercase tracking-widest text-zinc-500">Size</label>
+                          <input
+                            type="text"
+                            value={manualTrade.size}
+                            onChange={(e) => setManualTrade(prev => ({ ...prev, size: e.target.value }))}
+                            className="bg-zinc-950 border border-white/10 rounded-sm p-3 text-xs font-mono text-white outline-none focus:border-purple-500/50 transition-colors"
+                            placeholder="0.01"
+                          />
+                        </div>
+                      </div>
+
+                      {manualTrade.type === 'limit' && (
+                        <div className="flex flex-col gap-2">
+                          <label className="text-[8px] font-black uppercase tracking-widest text-zinc-500">Limit Price</label>
+                          <input
+                            type="text"
+                            value={manualTrade.price}
+                            onChange={(e) => setManualTrade(prev => ({ ...prev, price: e.target.value }))}
+                            className="bg-zinc-950 border border-white/10 rounded-sm p-3 text-xs font-mono text-white outline-none focus:border-purple-500/50 transition-colors"
+                            placeholder="0.00"
+                          />
+                        </div>
+                      )}
+
+                      <button
+                        onClick={executeManualTrade}
+                        disabled={isLoading}
+                        className={cn(
+                          "w-full py-4 rounded-full font-black uppercase tracking-widest text-xs transition-all shadow-lg flex items-center justify-center gap-3",
+                          manualTrade.side === 'buy' 
+                            ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-500/20" 
+                            : "bg-rose-600 hover:bg-rose-500 text-white shadow-rose-500/20"
+                        )}
+                      >
+                        {isLoading ? (
+                          <Activity size={16} className="animate-spin" />
+                        ) : (
+                          <Zap size={16} />
+                        )}
+                        {isLoading ? "Executing..." : `Execute ${manualTrade.side.toUpperCase()} Order`}
+                      </button>
+                    </div>
+
+                    {/* Account Info */}
+                    <div className="flex flex-col gap-4">
+                      <div className="p-6 bg-zinc-900/40 border border-white/5 rounded-sm flex flex-col gap-4">
+                        <div className="flex items-center gap-2">
+                          <Wallet size={16} className="text-blue-500" />
+                          <h3 className="text-[10px] font-black uppercase tracking-widest text-white">Account Info</h3>
+                        </div>
+                        <div className="flex flex-col gap-4">
+                          <div className="flex flex-col">
+                            <span className="text-[8px] font-black text-zinc-600 uppercase tracking-widest">Available Balance</span>
+                            <span className="text-2xl font-mono font-black text-white">${(status.balance || 0).toLocaleString()}</span>
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-[8px] font-black text-zinc-600 uppercase tracking-widest">Connected Address</span>
+                            <span className="text-[10px] font-mono text-zinc-400 truncate">{status.address}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="p-6 bg-purple-500/5 border border-purple-500/10 rounded-sm flex flex-col gap-3">
+                        <div className="flex items-center gap-2">
+                          <ShieldCheck size={14} className="text-purple-500" />
+                          <span className="text-[9px] font-black text-purple-200 uppercase tracking-widest">Agent Execution</span>
+                        </div>
+                        <p className="text-[10px] text-zinc-500 leading-relaxed">
+                          Manual trades are executed via your authorized Sentinel Agent. This ensures high-speed execution without requiring manual signatures for each order.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
-            
-            <div className="p-4 bg-white/[0.02] border border-white/5 rounded-sm flex flex-col gap-3">
-              <div className="flex items-center gap-2">
-                <ShieldCheck size={14} className="text-emerald-500" />
-                <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">Risk Management</span>
+
+            {/* Right Column: Logs */}
+            <div className="flex flex-col gap-4 overflow-hidden">
+              <div className="flex items-center gap-2 px-2">
+                <Terminal size={16} className="text-zinc-500" />
+                <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-white">Execution Logs</h3>
               </div>
-              <p className="text-[10px] text-zinc-500 leading-relaxed">
-                The bot uses a strict Trend-Following algorithm. Positions are opened when Technical Score &gt; 85 and closed when momentum reverses.
-              </p>
+              <div className="flex-1 bg-zinc-950 border border-white/10 rounded-sm p-4 font-mono text-[10px] overflow-y-auto custom-scrollbar flex flex-col-reverse gap-2 shadow-inner">
+                {status.logs.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-zinc-800 gap-2">
+                    <Terminal size={20} />
+                    <span className="italic">Awaiting network activity...</span>
+                  </div>
+                ) : (
+                  status.logs.map((log, i) => (
+                    <div key={i} className="flex gap-3 animate-in fade-in slide-in-from-left-2 duration-300">
+                      <span className="text-zinc-600 shrink-0 select-none">{log.split(']')[0]}]</span>
+                      <span className={cn(
+                        "leading-relaxed",
+                        log.includes('Placed') ? "text-emerald-400 font-bold" :
+                        log.includes('Closing') ? "text-blue-400" :
+                        log.includes('Failed') ? "text-rose-400 font-bold" : 
+                        log.includes('Analyzing') ? "text-zinc-500 italic" : "text-zinc-400"
+                      )}>
+                        {log.split(']')[1]}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+              
+              <div className="p-4 bg-white/[0.02] border border-white/5 rounded-sm flex flex-col gap-3">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck size={14} className="text-emerald-500" />
+                  <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">Risk Management</span>
+                </div>
+                <p className="text-[10px] text-zinc-500 leading-relaxed">
+                  The bot uses a strict Trend-Following algorithm. Positions are opened when Technical Score &gt; 85 and closed when momentum reverses.
+                </p>
+              </div>
             </div>
           </div>
         </div>

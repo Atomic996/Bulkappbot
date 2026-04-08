@@ -270,6 +270,30 @@ botRouter.post("/toggle", async (req: Request, res: Response) => {
   res.json({ success: true, enabled: botEnabled, status: botStatus });
 });
 
+botRouter.post("/trade", async (req: Request, res: Response) => {
+  if (!bulkClient) return res.status(400).json({ error: "No active session." });
+  const { symbol, side, size, price, type } = req.body;
+  try {
+    await bulkClient.placeOrder(symbol, side, size, price, type);
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("[API] Manual Trade Error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+botRouter.post("/close", async (req: Request, res: Response) => {
+  if (!bulkClient) return res.status(400).json({ error: "No active session." });
+  const { symbol, size, side } = req.body;
+  try {
+    await bulkClient.closePosition(symbol, size, side);
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("[API] Close Position Error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.use("/api/bot", botRouter);
 
 // News Cache

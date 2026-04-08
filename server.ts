@@ -92,31 +92,26 @@ botRouter.post("/settings", (req: Request, res: Response) => {
 botRouter.post("/auth/agent", async (req: Request, res: Response) => {
   const { address, agentPubKey, agentPrivKey, finalized } = req.body;
   if (!address || !agentPubKey || !agentPrivKey || !finalized) {
-    console.error("[Auth] Agent Auth Missing Fields:", { address: !!address, agentPubKey: !!agentPubKey, agentPrivKey: !!agentPrivKey, finalized: !!finalized });
     return res.status(400).json({ error: "Missing required fields" });
   }
 
   try {
     console.log(`[Auth] Authorizing Agent for: ${address}`);
     
-    // 1. Initialize or Update BulkClient with the Agent Keypair
     const agentKeypair = WasmKeypair.fromBase58(agentPrivKey);
     
-    if (bulkClient) {
-      // Update existing client's signer
-      bulkClient.updateSigner(agentKeypair);
-    } else {
-      // Create new client (will need authentication later to connect)
+    // Create or Update client with Agent Signer
+    if (!bulkClient) {
       bulkClient = new BulkClient(agentKeypair);
+    } else {
+      bulkClient.updateSigner(agentKeypair);
     }
     
-    // 2. Store the agent info in the session
     botAddress = address;
+    bulkClient.setAddress(address);
     
-    // 3. SUBMIT THE AUTHORIZATION TO THE EXCHANGE
-    // This is critical: the exchange must know the agent is authorized
+    // Submit to exchange
     try {
-      console.log("[Auth] Submitting Agent Authorization to Exchange...");
       await axios.post(`${BULK_API_URL}/api/v1/action`, {
         actions: JSON.parse(finalized.actions),
         nonce: finalized.nonce,
@@ -126,14 +121,9 @@ botRouter.post("/auth/agent", async (req: Request, res: Response) => {
       }, {
         headers: { "Content-Type": "application/json", "Origin": ORIGIN_URL }
       });
-      console.log("[Auth] Agent Authorization submitted to exchange successfully.");
       addBotLog("Agent Authorization synced with Exchange.");
-    } catch (e: any) {
-      console.error("[Auth] Failed to sync Agent Auth with Exchange:", e.response?.data || e.message);
-      // We continue anyway as the user might have already authorized it before
-    }
+    } catch (e) {}
 
-    // Persist agent info
     const currentSession = loadSession() || {};
     saveSession({
       ...currentSession,
@@ -142,11 +132,8 @@ botRouter.post("/auth/agent", async (req: Request, res: Response) => {
       botEnabled: true
     });
 
-    console.log(`[Auth] Agent Authorized Successfully: ${agentPubKey}`);
-    addBotLog(`Agent Authorized: ${agentPubKey.slice(0, 6)}...`);
     res.json({ success: true });
   } catch (err: any) {
-    console.error("[Auth] Agent Auth Error:", err.message);
     res.status(500).json({ error: "Agent Authorization Failed", message: err.message });
   }
 });
@@ -214,42 +201,39 @@ botRouter.post("/auth/init", async (req: Request, res: Response) => {
 
 botRouter.post("/auth/start", async (req: Request, res: Response) => {
   const { address, message, signature } = req.body;
-  
-  // 1. Retrieve session from memory
   const sessionData = pendingSessions.get(address);
 
   if (!sessionData || sessionData.message !== message) {
-    return res.status(400).json({ error: "Invalid or expired session request. Please refresh and try again." });
+    return res.status(400).json({ error: "Invalid or expired session request." });
   }
 
-  if (botEnabled) {
-    bulkClient?.stop();
+  // Preserve existing agent signer if available
+  if (!bulkClient) {
+    const sessionKeypair = WasmKeypair.fromBase58(sessionData.sessionPrivKey);
+    bulkClient = new BulkClient(sessionKeypair);
   }
-
-  const agentKeypair = WasmKeypair.fromBase58(sessionData.sessionPrivKey);
-  bulkClient = new BulkClient(agentKeypair);
+  
   const ok = await bulkClient.authenticate(address, message, signature);
   
   if (ok) {
-    // Cleanup
     pendingSessions.delete(address);
-
     bulkClient.connect();
     botEnabled = true;
     botStatus = "Monitoring";
-    addBotLog("Bot Authorized & Started.");
     
-    // Persist session state
+    const currentSession = loadSession() || {};
     saveSession({
+      ...currentSession,
       address,
       token: bulkClient.getToken(),
-      sessionPrivKey: sessionData.sessionPrivKey,
+      // Only save sessionPrivKey if we don't have an agentPrivKey
+      sessionPrivKey: currentSession.agentPrivKey ? undefined : sessionData.sessionPrivKey,
       botEnabled: true
     });
 
     res.json({ success: true, enabled: true });
   } else {
-    res.status(500).json({ error: "Authentication failed with Privy. Check server logs." });
+    res.status(500).json({ error: "Authentication failed." });
   }
 });
 

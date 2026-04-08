@@ -19,6 +19,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const BULK_WS_URL = "wss://exchange-ws1.bulk.trade";
+const BULK_API_URL = "https://api.early.bulk.trade"; // Added API URL for HTTP fallbacks
 const ORIGIN_URL = "https://early.bulk.trade";
 const PRIVY_APP_ID = "cmbuls93q01jol20lf0ak0plb";
 const PRIVY_URL = "https://auth.privy.io/api/v1";
@@ -112,6 +113,26 @@ botRouter.post("/auth/agent", async (req: Request, res: Response) => {
     // 2. Store the agent info in the session
     botAddress = address;
     
+    // 3. SUBMIT THE AUTHORIZATION TO THE EXCHANGE
+    // This is critical: the exchange must know the agent is authorized
+    try {
+      console.log("[Auth] Submitting Agent Authorization to Exchange...");
+      await axios.post(`${BULK_API_URL}/api/v1/action`, {
+        actions: JSON.parse(finalized.actions),
+        nonce: finalized.nonce,
+        account: finalized.account,
+        signer: finalized.signer,
+        signature: finalized.signature
+      }, {
+        headers: { "Content-Type": "application/json", "Origin": ORIGIN_URL }
+      });
+      console.log("[Auth] Agent Authorization submitted to exchange successfully.");
+      addBotLog("Agent Authorization synced with Exchange.");
+    } catch (e: any) {
+      console.error("[Auth] Failed to sync Agent Auth with Exchange:", e.response?.data || e.message);
+      // We continue anyway as the user might have already authorized it before
+    }
+
     // Persist agent info
     const currentSession = loadSession() || {};
     saveSession({
@@ -479,6 +500,17 @@ class BulkClient {
     this.ws.on("message", (data) => {
       try {
         const msg = JSON.parse(data.toString());
+        
+        // Log all responses for debugging
+        if (msg.id) {
+          console.log(`[BulkWS] Response to ID ${msg.id}:`, JSON.stringify(msg).slice(0, 200));
+          if (msg.status === "error") {
+            addBotLog(`❌ Trade Rejected: ${msg.error || "Unknown error"}`);
+          } else if (msg.status === "ok") {
+            addBotLog(`✅ Trade Confirmed by Exchange.`);
+          }
+        }
+
         if (msg.type === "account") {
           console.log(`[BulkWS] Account Update Received: ${msg.data?.type}`);
           if (msg.data?.type === "accountSnapshot" || msg.data?.type === "accountUpdate") {
@@ -529,24 +561,34 @@ class BulkClient {
   }
 
   async sendActions(actions: any[]) {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      addBotLog("❌ Cannot send trade: WebSocket not connected.");
+      return;
+    }
     
     try {
       // Use bulk-keychain for signing
-      const signed = this.signer.signGroup(actions);
+      // For single actions, signGroup([action]) is fine, but let's be explicit
+      const signed = actions.length === 1 
+        ? this.signer.sign(actions[0]) 
+        : this.signer.signGroup(actions);
       
+      const payload = {
+        actions: JSON.parse(signed.actions),
+        nonce: signed.nonce,
+        account: signed.account,
+        signer: signed.signer,
+        signature: signed.signature
+      };
+
+      console.log(`[BulkClient] Sending Action: ${JSON.stringify(payload).slice(0, 150)}...`);
+
       const msg = {
         method: "post",
         id: Date.now(),
         request: {
           type: "action",
-          payload: {
-            actions: JSON.parse(signed.actions),
-            nonce: signed.nonce,
-            account: this.address,
-            signer: signed.signer,
-            signature: signed.signature
-          }
+          payload
         }
       };
       

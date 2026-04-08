@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useWallet } from '@solana/wallet-adapter-react';
+import { useWalletModal } from '@solana/wallet-adapter-react-ui';
 import { 
   Activity, 
   RefreshCw, 
@@ -20,7 +22,8 @@ import {
   Newspaper,
   BarChart3,
   Clock,
-  Wallet
+  Wallet,
+  ChevronDown
 } from 'lucide-react';
 import { AssetSignal, PriceData, NewsItem, Timeframe } from '../types.js';
 import { fetchHistoricalData, fetchNews } from '../lib/api.js';
@@ -33,7 +36,6 @@ import { Chart } from './Chart.js';
 import { ChatAdvisor } from './ChatAdvisor.js';
 import { BulkAnalysis } from './BulkAnalysis.js';
 import { TradingBot } from './TradingBot.js';
-import { WalletView } from './WalletView.js';
 import TradingViewWidget from './TradingViewWidget.js';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -58,8 +60,7 @@ export const Dashboard: React.FC = () => {
   const [newsError, setNewsError] = useState<Record<string, string | null>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'assets' | 'analysis' | 'technical' | 'bulk' | 'news' | 'bot' | 'wallet'>('analysis');
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<'assets' | 'analysis' | 'technical' | 'bulk' | 'news' | 'bot'>('analysis');
   const [alerts, setAlerts] = useState<{ id: string; message: string; type: 'info' | 'warning' | 'success' }[]>([]);
   const [lastAnalysisTime, setLastAnalysisTime] = useState<Record<string, number>>({});
 
@@ -277,6 +278,9 @@ export const Dashboard: React.FC = () => {
   const currentHistory = useMemo(() => historicalData[selectedSymbol] || [], [historicalData, selectedSymbol]);
   const currentNews = useMemo(() => news[selectedSymbol] || [], [news, selectedSymbol]);
 
+  const { publicKey, connected } = useWallet();
+  const { setVisible } = useWalletModal();
+
   return (
     <div className="min-h-screen bg-[#050505] text-zinc-100 font-sans selection:bg-blue-500/30 flex flex-col overflow-hidden">
       {/* Structural Grid Background */}
@@ -298,11 +302,6 @@ export const Dashboard: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-3 md:gap-6">
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-white/5 border border-white/10 rounded-sm">
-            <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse shadow-[0_0_8px_rgba(255,255,255,0.5)]" />
-            <span className="text-[10px] font-black text-white uppercase tracking-[0.2em]">{selectedSymbol}</span>
-          </div>
-
           <div className="hidden lg:flex items-center gap-4 px-4 py-1.5 border-x border-white/10">
             <div className="flex flex-col items-end">
               <span className="text-[9px] font-serif italic text-zinc-500">Market Status</span>
@@ -314,20 +313,60 @@ export const Dashboard: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2 md:gap-3">
-            <button 
-              onClick={() => setIsSidebarOpen(true)}
-              className="w-8 h-8 md:w-9 md:h-9 rounded-sm bg-white flex flex-col items-center justify-center gap-[3px] hover:bg-zinc-200 transition-all shadow-[0_0_20px_rgba(255,255,255,0.15)] group"
-            >
-              <div className="w-4 h-[1.5px] bg-black group-hover:w-5 transition-all" />
-              <div className="w-4 h-[1.5px] bg-black" />
-              <div className="w-4 h-[1.5px] bg-black group-hover:w-5 transition-all" />
-            </button>
+            {connected && publicKey ? (
+              <button 
+                onClick={() => setVisible(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-white/5 border border-white/10 rounded-full hover:bg-white/10 transition-all group"
+              >
+                <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+                <span className="text-[10px] font-mono font-bold text-white">
+                  {publicKey.toBase58().slice(0, 4)}...{publicKey.toBase58().slice(-4)}
+                </span>
+                <ChevronDown size={12} className="text-zinc-500 group-hover:text-white transition-colors" />
+              </button>
+            ) : (
+              <button 
+                onClick={() => setVisible(true)}
+                className="px-6 py-2 bg-white text-black text-[10px] font-black uppercase tracking-widest rounded-full hover:bg-zinc-200 transition-all shadow-[0_0_20px_rgba(255,255,255,0.15)] flex items-center gap-2"
+              >
+                <Wallet size={14} />
+                Connect Wallet
+              </button>
+            )}
           </div>
         </div>
       </nav>
 
       {/* Main Content Grid - Full Width */}
       <main className="flex-1 flex flex-col overflow-hidden z-10 relative">
+        {/* Top Asset Selector */}
+        <div className="flex items-center gap-2 px-4 md:px-6 py-3 bg-black/40 border-b border-white/10 overflow-x-auto no-scrollbar shrink-0">
+          <span className="text-[10px] font-black text-zinc-600 uppercase tracking-widest mr-4 shrink-0">Markets</span>
+          {SYMBOLS.map(symbol => (
+            <button
+              key={symbol}
+              onClick={() => setSelectedSymbol(symbol)}
+              className={cn(
+                "flex items-center gap-3 px-5 py-2 rounded-full border transition-all shrink-0",
+                selectedSymbol === symbol 
+                  ? "bg-white border-white text-black shadow-lg shadow-white/10" 
+                  : "bg-white/[0.02] border-white/5 text-zinc-400 hover:border-white/20 hover:bg-white/[0.04]"
+              )}
+            >
+              <div className={cn(
+                "w-5 h-5 rounded-full flex items-center justify-center font-black text-[8px]",
+                selectedSymbol === symbol ? "bg-black text-white" : "bg-white/10 text-zinc-500"
+              )}>
+                {symbol.slice(0, 1)}
+              </div>
+              <div className="flex flex-col items-start -space-y-1">
+                <span className="text-[10px] font-black tracking-tight">{symbol}</span>
+                <span className="text-[8px] font-mono text-zinc-500">USD</span>
+              </div>
+            </button>
+          ))}
+        </div>
+
         {/* Center: Main Analysis View */}
         <section className="flex flex-col flex-1 overflow-hidden bg-black/40">
           {/* Performance Optimized Stats Header */}
@@ -493,17 +532,6 @@ export const Dashboard: React.FC = () => {
                   <TradingBot />
                 </motion.div>
               )}
-              {activeTab === 'wallet' && (
-                <motion.div 
-                  key="wallet-view"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="flex-1 flex flex-col h-full"
-                >
-                  <WalletView onBack={() => setActiveTab('assets')} />
-                </motion.div>
-              )}
               {activeTab === 'technical' && (
                 <motion.div 
                   key={`technical-${selectedSymbol}`}
@@ -638,123 +666,7 @@ export const Dashboard: React.FC = () => {
           <Cpu size={20} />
           <span className="text-[8px] font-black uppercase tracking-widest">Bot</span>
         </button>
-        <button 
-          onClick={() => setActiveTab('wallet')}
-          className={cn(
-            "flex flex-col items-center gap-1 transition-all",
-            activeTab === 'wallet' ? "text-white" : "text-zinc-600"
-          )}
-        >
-          <Wallet size={20} />
-          <span className="text-[8px] font-black uppercase tracking-widest">Wallet</span>
-        </button>
       </div>
-
-      {/* Right Sidebar Drawer */}
-      <AnimatePresence>
-        {isSidebarOpen && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsSidebarOpen(false)}
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60]"
-            />
-            <motion.div
-              initial={{ x: '100%' }}
-              animate={{ x: 0 }}
-              exit={{ x: '100%' }}
-              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed right-0 top-0 bottom-0 w-[280px] sm:w-[320px] bg-zinc-950 border-l border-white/10 z-[70] flex flex-col shadow-2xl"
-            >
-              <div className="p-6 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
-                <div className="flex flex-col">
-                  <span className="text-[10px] font-serif italic text-zinc-500 uppercase tracking-widest">Navigation</span>
-                  <h2 className="text-sm font-black text-white uppercase tracking-tighter">Market Hub</h2>
-                </div>
-                <button 
-                  onClick={() => setIsSidebarOpen(false)}
-                  className="p-2 hover:bg-white/5 rounded-full transition-colors"
-                >
-                  <AlertCircle size={18} className="text-zinc-500 rotate-45" />
-                </button>
-              </div>
-
-              <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-6">
-                {/* Compact Market Selection */}
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between px-2">
-                    <span className="text-[9px] font-black text-zinc-600 uppercase tracking-[0.2em]">Market Selection</span>
-                    <div className="h-px flex-1 mx-4 bg-white/5" />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    {SYMBOLS.map(symbol => (
-                      <button
-                        key={symbol}
-                        onClick={() => {
-                          setSelectedSymbol(symbol);
-                          setIsSidebarOpen(false);
-                          setActiveTab('analysis');
-                        }}
-                        className={cn(
-                          "flex items-center gap-2 p-2 rounded-sm border transition-all",
-                          selectedSymbol === symbol 
-                            ? "bg-white border-white text-black shadow-lg shadow-white/10" 
-                            : "bg-white/[0.02] border-white/5 text-zinc-400 hover:border-white/20 hover:bg-white/[0.04]"
-                        )}
-                      >
-                        <div className={cn(
-                          "w-5 h-5 rounded-full flex items-center justify-center font-black text-[8px]",
-                          selectedSymbol === symbol ? "bg-black text-white" : "bg-white/5 text-zinc-500"
-                        )}>
-                          {symbol.slice(0, 1)}
-                        </div>
-                        <span className="text-[10px] font-black tracking-tight">{symbol}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* AI Chatbot Section */}
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between px-2">
-                    <span className="text-[9px] font-black text-zinc-600 uppercase tracking-[0.2em]">AI Assistant</span>
-                    <div className="h-px flex-1 mx-4 bg-white/5" />
-                  </div>
-                  <button 
-                    onClick={() => {
-                      // Trigger chat advisor
-                      setIsSidebarOpen(false);
-                      const chatBtn = document.querySelector('[data-chat-trigger]');
-                      if (chatBtn instanceof HTMLElement) chatBtn.click();
-                    }}
-                    className="w-full p-4 rounded-sm bg-white/5 border border-white/10 flex flex-col gap-2 hover:bg-white/10 transition-all group text-left"
-                  >
-                    <div className="flex items-center gap-2 text-white">
-                      <MessageSquare size={16} />
-                      <span className="text-xs font-black uppercase tracking-tight">Sentinel Advisor</span>
-                    </div>
-                    <p className="text-[10px] text-zinc-500 leading-relaxed">
-                      Get instant intelligence and smart trade recommendations through direct AI consultation.
-                    </p>
-                    <div className="mt-2 flex items-center gap-2 text-[9px] font-black text-white uppercase tracking-widest group-hover:gap-3 transition-all">
-                      Open Chat <ChevronRight size={10} />
-                    </div>
-                  </button>
-                </div>
-              </div>
-
-              <div className="p-6 bg-white/[0.02] border-t border-white/10">
-                <div className="flex items-center gap-3 text-zinc-500">
-                  <ShieldCheck size={14} />
-                  <span className="text-[9px] font-mono uppercase tracking-widest">Secure Environment</span>
-                </div>
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
 
       {/* Alerts Overlay - Minimalist */}
       <div className="fixed bottom-6 left-6 z-[100] space-y-2 pointer-events-none">

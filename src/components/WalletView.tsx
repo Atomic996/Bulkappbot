@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
-import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
+import { useWalletModal } from '@solana/wallet-adapter-react-ui';
 import { LAMPORTS_PER_SOL } from '@solana/web3.js';
 import { motion } from 'motion/react';
 import { 
@@ -29,6 +29,7 @@ interface WalletViewProps {
 
 export const WalletView: React.FC<WalletViewProps> = ({ onBack }) => {
   const { publicKey, connected, wallet, select } = useWallet();
+  const { setVisible } = useWalletModal();
   const { connection } = useConnection();
   const [balance, setBalance] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -62,26 +63,51 @@ export const WalletView: React.FC<WalletViewProps> = ({ onBack }) => {
 
   if (!connected) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center p-8 gap-8">
-        <div className="w-20 h-20 bg-blue-500/10 rounded-full flex items-center justify-center">
-          <Wallet size={40} className="text-blue-500" />
+      <div className="flex-1 flex flex-col items-center justify-center p-8 gap-10">
+        <div className="relative">
+          <div className="w-24 h-24 bg-blue-500/20 rounded-full flex items-center justify-center animate-pulse" />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="w-16 h-16 bg-blue-500 rounded-full flex items-center justify-center shadow-[0_0_30px_rgba(59,130,246,0.5)]">
+              <Wallet size={32} className="text-white" />
+            </div>
+          </div>
         </div>
-        <div className="flex flex-col items-center text-center gap-2 max-w-sm">
-          <h2 className="text-2xl font-black uppercase tracking-tighter text-white">Connect Wallet</h2>
+        
+        <div className="flex flex-col items-center text-center gap-3 max-w-sm">
+          <h2 className="text-3xl font-black uppercase tracking-tighter text-white">Connect Wallet</h2>
           <p className="text-zinc-500 text-sm font-mono leading-relaxed">
-            Connect your Solana wallet to view your assets, transaction history, and manage your bot session.
+            Securely connect your Solana wallet to access advanced trading features, real-time portfolio tracking, and AI-driven insights.
           </p>
         </div>
-        <div className="flex flex-col items-center gap-2">
-          <WalletMultiButton className="!bg-white !text-black !font-black !uppercase !tracking-widest !rounded-sm hover:!bg-zinc-200 transition-all !h-12 !px-8" />
+
+        <div className="flex flex-col items-center gap-4 w-full max-w-xs">
+          <button 
+            onClick={() => setVisible(true)}
+            className="w-full h-14 bg-white text-black font-black uppercase tracking-widest rounded-full hover:bg-zinc-200 transition-all shadow-[0_0_30px_rgba(255,255,255,0.2)] flex items-center justify-center gap-3 group"
+          >
+            <Wallet size={18} className="group-hover:scale-110 transition-transform" />
+            Connect Now
+          </button>
+          
           {wallet && !connected && (
             <button 
               onClick={() => select(null)}
               className="text-[10px] font-black text-zinc-500 uppercase tracking-widest hover:text-white transition-colors underline underline-offset-4"
             >
-              Change Wallet
+              Switch Provider
             </button>
           )}
+        </div>
+
+        <div className="flex items-center gap-6 pt-4 opacity-40">
+          <div className="flex flex-col items-center gap-1">
+            <ShieldCheck size={16} className="text-zinc-500" />
+            <span className="text-[8px] font-black uppercase tracking-widest text-zinc-600">Secure</span>
+          </div>
+          <div className="flex flex-col items-center gap-1">
+            <RefreshCw size={16} className="text-zinc-500" />
+            <span className="text-[8px] font-black uppercase tracking-widest text-zinc-600">Real-time</span>
+          </div>
         </div>
       </div>
     );

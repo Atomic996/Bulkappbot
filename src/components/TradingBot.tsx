@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useWalletModal } from '@solana/wallet-adapter-react-ui';
-import bs58 from 'bs58';
 import axios from 'axios';
 import { 
   Play, 
@@ -15,10 +14,15 @@ import {
   AlertCircle,
   ShieldCheck,
   Cpu,
-  Key
+  Key,
+  ChevronRight,
+  Lock,
+  Zap,
+  Info
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import bs58 from 'bs58';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -148,14 +152,14 @@ export const TradingBot: React.FC = () => {
       const encodedMessage = new TextEncoder().encode(message);
       const signed = await signMessage(encodedMessage);
       
-      // Convert signature to base58 (Solana standard)
-      const signature = bs58.encode(signed);
+      // Convert signature to base64
+      const signatureBase64 = btoa(String.fromCharCode.apply(null, Array.from(signed)));
 
       // 3. Send signature back to server
       await axios.post(`${BACKEND_URL}/api/bot/auth/start`, {
         address: publicKey?.toBase58(),
         message,
-        signature: signature
+        signature: signatureBase64
       });
       
       fetchStatus();
@@ -242,7 +246,7 @@ export const TradingBot: React.FC = () => {
             onClick={startBotWithWallet}
             disabled={isLoading || status.enabled}
             className={cn(
-              "px-8 py-3 rounded-sm font-black uppercase tracking-[0.2em] text-xs transition-all flex items-center gap-3 shadow-2xl",
+              "px-8 py-3 rounded-full font-black uppercase tracking-[0.2em] text-[10px] transition-all flex items-center gap-3 shadow-2xl",
               status.enabled 
                 ? "bg-emerald-500/20 text-emerald-500 border border-emerald-500/30 cursor-default" 
                 : "bg-white text-black hover:bg-zinc-200 shadow-white/20 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -263,7 +267,7 @@ export const TradingBot: React.FC = () => {
               <button
                 onClick={toggleOrderType}
                 className={cn(
-                  "px-4 py-3 rounded-sm font-black uppercase tracking-widest text-[10px] transition-all border",
+                  "px-4 py-3 rounded-full font-black uppercase tracking-widest text-[9px] transition-all border",
                   status.orderType === 'auto' 
                     ? "bg-purple-500/10 border-purple-500/30 text-purple-500 hover:bg-purple-500/20"
                     : status.orderType === 'limit'
@@ -276,13 +280,13 @@ export const TradingBot: React.FC = () => {
               <button
                 onClick={stopBot}
                 className={cn(
-                  "px-6 py-3 rounded-sm font-black uppercase tracking-widest text-[10px] transition-all border",
+                  "px-6 py-3 rounded-full font-black uppercase tracking-widest text-[9px] transition-all border",
                   status.enabled 
                     ? "bg-rose-500/10 border-rose-500/30 text-rose-500 hover:bg-rose-500/20" 
                     : "bg-emerald-500/10 border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/20"
                 )}
               >
-                {status.enabled ? "Disable Auto-Trade" : "Enable Auto-Trade"}
+                {status.enabled ? "Stop Agent" : "Resume Agent"}
               </button>
             </div>
           )}
@@ -324,26 +328,75 @@ export const TradingBot: React.FC = () => {
       )}
 
       {!status.hasSession && !isLoading && (
-        <div className="p-12 bg-zinc-900/40 border border-white/5 rounded-sm flex flex-col items-center justify-center text-center gap-6">
-          <div className="w-16 h-16 bg-blue-500/10 rounded-full flex items-center justify-center">
-            <Key size={32} className="text-blue-500" />
+        <div className="flex-1 flex flex-col items-center justify-center p-8 gap-12 max-w-2xl mx-auto">
+          <div className="relative">
+            <div className="w-28 h-28 bg-blue-500/10 rounded-full flex items-center justify-center animate-pulse" />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center shadow-[0_0_40px_rgba(59,130,246,0.4)]">
+                {connected ? <Lock size={36} className="text-white" /> : <Wallet size={36} className="text-white" />}
+              </div>
+            </div>
+            <div className="absolute -bottom-2 -right-2 w-10 h-10 bg-zinc-900 border border-white/10 rounded-full flex items-center justify-center shadow-xl">
+              <Cpu size={18} className="text-blue-400" />
+            </div>
           </div>
-          <div className="flex flex-col gap-2 max-w-md">
-            <h3 className="text-lg font-black uppercase tracking-widest text-white">
-              {connected ? "Authorization Required" : "Wallet Connection Required"}
-            </h3>
-            <p className="text-zinc-500 text-sm font-mono leading-relaxed">
+          
+          <div className="flex flex-col items-center text-center gap-4">
+            <div className="flex flex-col items-center">
+              <h3 className="text-3xl font-black uppercase tracking-tighter text-white">
+                {connected ? "Authorize Session" : "Connect Trading Hub"}
+              </h3>
+              <div className="h-1 w-12 bg-blue-500 rounded-full mt-2" />
+            </div>
+            
+            <p className="text-zinc-400 text-sm font-mono leading-relaxed max-w-md">
               {connected 
-                ? "Your wallet is connected. Now authorize the bot session to start trading autonomously."
-                : "Connect your Solana wallet to authorize the bot session. The bot will use a temporary session key to execute trades on your behalf."}
+                ? "AI Delegate ready. Authorize a strategic proxy to begin high-speed market operations. This creates a secure, temporary execution layer that acts on your behalf while your main assets remain fully protected."
+                : "Unlock the Sentinel AI network. Connect your wallet to delegate execution to our high-frequency trading engine. We use a secure proxy layer to ensure your private keys are never exposed to the trading environment."}
             </p>
           </div>
-          <button 
-            onClick={startBotWithWallet}
-            className="px-10 py-4 bg-white text-black text-xs font-black uppercase tracking-[0.2em] rounded-sm hover:bg-zinc-200 transition-all shadow-xl"
-          >
-            {connected ? "Sign & Start Bot" : "Connect Wallet & Start"}
-          </button>
+
+          <div className="flex flex-col items-center gap-4 w-full max-w-sm">
+            <button 
+              onClick={startBotWithWallet}
+              className="w-full h-16 bg-white text-black text-sm font-black uppercase tracking-[0.2em] rounded-full hover:bg-zinc-200 transition-all shadow-[0_0_30px_rgba(255,255,255,0.2)] flex items-center justify-center gap-3 group"
+            >
+              {connected ? <Zap size={18} className="group-hover:scale-110 transition-transform" /> : <Wallet size={18} className="group-hover:scale-110 transition-transform" />}
+              {connected ? "Authorize AI Delegate" : "Connect & Delegate"}
+            </button>
+            
+            <div className="flex items-center gap-6 pt-4 opacity-50">
+              <div className="flex items-center gap-2">
+                <ShieldCheck size={14} className="text-emerald-500" />
+                <span className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Strategic Proxy</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Lock size={14} className="text-blue-500" />
+                <span className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Isolated Execution</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full mt-4">
+            <div className="p-4 bg-white/[0.02] border border-white/5 rounded-sm flex flex-col gap-2">
+              <div className="flex items-center gap-2 text-white">
+                <Activity size={14} className="text-blue-500" />
+                <span className="text-[10px] font-black uppercase tracking-widest">Trend Following</span>
+              </div>
+              <p className="text-[10px] text-zinc-500 leading-relaxed">
+                Executes trades based on high-probability technical setups and momentum confirmation.
+              </p>
+            </div>
+            <div className="p-4 bg-white/[0.02] border border-white/5 rounded-sm flex flex-col gap-2">
+              <div className="flex items-center gap-2 text-white">
+                <Info size={14} className="text-purple-500" />
+                <span className="text-[10px] font-black uppercase tracking-widest">Risk Control</span>
+              </div>
+              <p className="text-[10px] text-zinc-500 leading-relaxed">
+                Automated stop-loss and take-profit management for every position opened.
+              </p>
+            </div>
+          </div>
         </div>
       )}
 
@@ -449,18 +502,22 @@ export const TradingBot: React.FC = () => {
               <Terminal size={16} className="text-zinc-500" />
               <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-white">Execution Logs</h3>
             </div>
-            <div className="flex-1 bg-black border border-white/10 rounded-sm p-4 font-mono text-[10px] overflow-y-auto custom-scrollbar flex flex-col-reverse gap-2">
+            <div className="flex-1 bg-zinc-950 border border-white/10 rounded-sm p-4 font-mono text-[10px] overflow-y-auto custom-scrollbar flex flex-col-reverse gap-2 shadow-inner">
               {status.logs.length === 0 ? (
-                <span className="text-zinc-700 italic">Waiting for execution...</span>
+                <div className="h-full flex flex-col items-center justify-center text-zinc-800 gap-2">
+                  <Terminal size={20} />
+                  <span className="italic">Awaiting network activity...</span>
+                </div>
               ) : (
                 status.logs.map((log, i) => (
-                  <div key={i} className="flex gap-3">
-                    <span className="text-zinc-600 shrink-0">{log.split(']')[0]}]</span>
+                  <div key={i} className="flex gap-3 animate-in fade-in slide-in-from-left-2 duration-300">
+                    <span className="text-zinc-600 shrink-0 select-none">{log.split(']')[0]}]</span>
                     <span className={cn(
                       "leading-relaxed",
-                      log.includes('Placed') ? "text-blue-400" :
-                      log.includes('Closing') ? "text-purple-400" :
-                      log.includes('Failed') ? "text-rose-400" : "text-zinc-400"
+                      log.includes('Placed') ? "text-emerald-400 font-bold" :
+                      log.includes('Closing') ? "text-blue-400" :
+                      log.includes('Failed') ? "text-rose-400 font-bold" : 
+                      log.includes('Analyzing') ? "text-zinc-500 italic" : "text-zinc-400"
                     )}>
                       {log.split(']')[1]}
                     </span>

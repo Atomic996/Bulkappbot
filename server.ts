@@ -91,25 +91,25 @@ botRouter.post("/settings", (req: Request, res: Response) => {
 botRouter.post("/auth/agent", async (req: Request, res: Response) => {
   const { address, agentPubKey, agentPrivKey, finalized } = req.body;
   if (!address || !agentPubKey || !agentPrivKey || !finalized) {
+    console.error("[Auth] Agent Auth Missing Fields:", { address: !!address, agentPubKey: !!agentPubKey, agentPrivKey: !!agentPrivKey, finalized: !!finalized });
     return res.status(400).json({ error: "Missing required fields" });
   }
 
   try {
     console.log(`[Auth] Authorizing Agent for: ${address}`);
     
-    // 1. Initialize BulkClient with the Agent Keypair
+    // 1. Initialize or Update BulkClient with the Agent Keypair
     const agentKeypair = WasmKeypair.fromBase58(agentPrivKey);
-    bulkClient = new BulkClient(agentKeypair);
     
-    // 2. We need a token to connect to the WS. 
-    // For now, we'll assume the user still needs to go through the SIWS flow 
-    // OR we can use the agent authorization to get a session.
-    // However, BULK usually requires a session token.
+    if (bulkClient) {
+      // Update existing client's signer
+      bulkClient.updateSigner(agentKeypair);
+    } else {
+      // Create new client (will need authentication later to connect)
+      bulkClient = new BulkClient(agentKeypair);
+    }
     
-    // If we already have a bulkClient from SIWS, we just update its signer.
-    // If not, we might need to wait for SIWS.
-    
-    // Let's store the agent info in the session
+    // 2. Store the agent info in the session
     botAddress = address;
     
     // Persist agent info
@@ -121,6 +121,7 @@ botRouter.post("/auth/agent", async (req: Request, res: Response) => {
       botEnabled: true
     });
 
+    console.log(`[Auth] Agent Authorized Successfully: ${agentPubKey}`);
     addBotLog(`Agent Authorized: ${agentPubKey.slice(0, 6)}...`);
     res.json({ success: true });
   } catch (err: any) {
@@ -367,6 +368,11 @@ class BulkClient {
   
   setToken(token: string) { this.token = token; }
   setAddress(address: string) { this.address = address; botAddress = address; }
+
+  updateSigner(keypair: WasmKeypair) {
+    this.signer = new WasmSigner(keypair);
+    addBotLog("Trading Signer updated to Agent Wallet.");
+  }
 
   async authenticate(address: string, message: string, signature: string) {
     const headers = { 
@@ -763,8 +769,23 @@ setInterval(runAutoTrader, 5 * 60 * 1000);
 async function startServer() {
   // Initialize WASM
   try {
-    await init();
-    console.log("[WASM] bulk-keychain initialized");
+    const wasmPath = path.join(__dirname, "node_modules", "bulk-keychain-wasm", "bulk_keychain_wasm_bg.wasm");
+    if (fs.existsSync(wasmPath)) {
+      const wasmBuffer = fs.readFileSync(wasmPath);
+      await init(wasmBuffer);
+      console.log("[WASM] bulk-keychain initialized from buffer");
+    } else {
+      // Fallback for different environments
+      const altPath = path.join(process.cwd(), "node_modules", "bulk-keychain-wasm", "bulk_keychain_wasm_bg.wasm");
+      if (fs.existsSync(altPath)) {
+        const wasmBuffer = fs.readFileSync(altPath);
+        await init(wasmBuffer);
+        console.log("[WASM] bulk-keychain initialized from alt buffer");
+      } else {
+        await init();
+        console.log("[WASM] bulk-keychain initialized (default)");
+      }
+    }
   } catch (e) {
     console.error("[WASM] Failed to initialize:", e);
   }

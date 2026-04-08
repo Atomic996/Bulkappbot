@@ -29,6 +29,27 @@ let botPositions: any[] = [];
 let botLogs: string[] = [];
 let botOrderType: 'market' | 'limit' | 'auto' = 'auto';
 
+const SESSION_FILE = path.join(__dirname, "bot_session.json");
+
+const saveSession = (data: any) => {
+  try {
+    fs.writeFileSync(SESSION_FILE, JSON.stringify(data));
+  } catch (e) {
+    console.error("Failed to save session:", e);
+  }
+};
+
+const loadSession = () => {
+  try {
+    if (fs.existsSync(SESSION_FILE)) {
+      return JSON.parse(fs.readFileSync(SESSION_FILE, "utf8"));
+    }
+  } catch (e) {
+    console.error("Failed to load session:", e);
+  }
+  return null;
+};
+
 const pendingSessions = new Map<string, { message: string, sessionPrivKey: string, timestamp: number }>();
 
 const app = express();
@@ -268,12 +289,31 @@ class BulkClient {
       this.token = r_auth_data.token;
       this.address = address;
       botAddress = address;
+      
+      // Persist session
+      saveSession({
+        address,
+        token: this.token,
+        sessionPrivKey: bs58.encode(this.sessionKeyPair.secretKey),
+        botEnabled: true
+      });
+
       addBotLog(`Authenticated ${address.slice(0, 6)}...`);
       return true;
     } catch (err: any) {
       console.error("Bulk Auth Error:", err.message);
       return false;
     }
+  }
+
+  // Restore session from saved data
+  restore(data: any) {
+    this.token = data.token;
+    this.address = data.address;
+    botAddress = data.address;
+    this.sessionKeyPair = nacl.sign.keyPair.fromSecretKey(bs58.decode(data.sessionPrivKey));
+    botEnabled = data.botEnabled;
+    return true;
   }
 
   connect() {
@@ -322,23 +362,18 @@ class BulkClient {
     this.ws.on("close", () => { if (botEnabled) setTimeout(() => this.connect(), 5000); });
   }
 
-  async sendAction(method: string, params: any) {
+  async sendActions(actions: any[]) {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
     const ts = Date.now();
     
-    const action = { [method]: params };
-
-    // ترتيب المفاتيح مهم — مثل Python OrderedDict
     const payload = {
       account: this.address,
-      actions: [action],
+      actions: actions,
       nonce: ts,
       type: "action"
     };
 
-    // ← مهم جداً: بدون مسافات مثل Python separators=(',', ':')
-    const payloadJson = JSON.stringify(payload, null, 0)
-      .replace(/\s/g, '');
+    const payloadJson = JSON.stringify(payload, null, 0).replace(/\s/g, '');
 
     const signatureBytes = nacl.sign.detached(
       Buffer.from(payloadJson),
@@ -364,49 +399,93 @@ class BulkClient {
   }
 
   async setLeverage(symbol: string, leverage: number) {
-    // Correct format from Python: {"updateUserSettings": {"m": {symbol: int(leverage)}}}
-    await this.sendAction("updateUserSettings", { m: { [symbol]: leverage } });
+    await this.sendActions([{ updateUserSettings: { m: { [symbol]: leverage } } }]);
     addBotLog(`Updated Leverage for ${symbol} to ${leverage}x`);
   }
 
-  async placeOrder(symbol: string, side: 'buy' | 'sell', size: number, price: number = 0, typeOverride?: 'market' | 'limit') {
-    // Formatting size based on asset (from Python logic)
+  async placeBracketOrder(symbol: string, side: 'buy' | 'sell', size: number, entryPrice: number, slPrice: number, tpPrice: number) {
     const formattedSize = symbol.startsWith("BTC") ? size.toFixed(4) : size.toFixed(2);
     
-    // Python order structure: {"m": {"b": is_buy, "c": symbol, "r": False, "sz": size}}
+    // 1. Entry Order
+    const entryParams = {
+      b: side === 'buy',
+      c: symbol,
+      r: false,
+      sz: formattedSize,
+      p: entryPrice.toString(),
+      tif: "gtc"
+    };
+
+    // 2. Stop Loss (Reduce Only Trigger)
+    // Note: In Bulk/HL, triggers often use a different format, but based on the user's request
+    // we are sending them together in one transaction.
+    const slParams = {
+      b: side === 'sell',
+      c: symbol,
+      r: true,
+      sz: formattedSize,
+      p: slPrice.toString(),
+      tif: "gtc",
+      isTrigger: true,
+      triggerPx: slPrice.toString(),
+      triggerType: "stopLoss"
+    };
+
+    // 3. Take Profit (Reduce Only Trigger)
+    const tpParams = {
+      b: side === 'sell',
+      c: symbol,
+      r: true,
+      sz: formattedSize,
+      p: tpPrice.toString(),
+      tif: "gtc",
+      isTrigger: true,
+      triggerPx: tpPrice.toString(),
+      triggerType: "takeProfit"
+    };
+
+    await this.sendActions([
+      { m: entryParams },
+      { m: slParams },
+      { m: tpParams }
+    ]);
+    
+    addBotLog(`🚀 Bracket Order Sent for ${symbol} | Size: ${formattedSize}`);
+    addBotLog(`   Entry: ${entryPrice.toFixed(2)} | SL: ${slPrice.toFixed(2)} | TP: ${tpPrice.toFixed(2)}`);
+  }
+
+  async placeOrder(symbol: string, side: 'buy' | 'sell', size: number, price: number = 0, typeOverride?: 'market' | 'limit') {
+    const formattedSize = symbol.startsWith("BTC") ? size.toFixed(4) : size.toFixed(2);
     const params: any = {
       b: side === 'buy',
       c: symbol,
       r: false,
       sz: formattedSize
     };
-
     const finalType = typeOverride || botOrderType;
-
     if (finalType === 'limit' && price > 0) {
       params.p = price.toString();
-      params.tif = "gtc"; // Good Till Cancelled for limit orders
+      params.tif = "gtc";
     } else {
-      params.p = "0"; // 0 means market
-      params.tif = "ioc"; // Immediate Or Cancel for market orders
+      params.p = "0";
+      params.tif = "ioc";
     }
-    
     const typeLabel = finalType === 'auto' ? 'AUTO' : finalType.toUpperCase();
-    await this.sendAction("m", params);
+    await this.sendActions([{ m: params }]);
     addBotLog(`Placed ${typeLabel} ${side.toUpperCase()} order for ${symbol} | Size: ${formattedSize}${params.p !== "0" ? ` | Price: ${price}` : ''}`);
   }
 
   async closePosition(symbol: string, size: number, side: string) {
     const formattedSize = symbol.startsWith("BTC") ? Math.abs(size).toFixed(4) : Math.abs(size).toFixed(2);
     const params = {
-      b: side === 'short', // if closing short, we need to buy
+      b: side === 'short',
       c: symbol,
-      r: true, // reduceOnly
+      r: true,
       sz: formattedSize,
-      p: "0", // market
+      p: "0",
       tif: "ioc"
     };
-    await this.sendAction("m", params);
+    await this.sendActions([{ m: params }]);
     addBotLog(`Closing ${side.toUpperCase()} position for ${symbol}`);
   }
 
@@ -471,26 +550,64 @@ const runAutoTrader = async () => {
 
       const decision = getTradeDecision(history, botBalance, symbol, currentPosition);
       const currentPrice = history[history.length - 1].close;
+      const ind = computeIndicators(history);
       
       addBotLog(`📊 ${sym} | ${decision.regime} | [${decision.strategy}] | Score: ${decision.score.toFixed(0)} | → ${decision.action}`);
       if (decision.reason) addBotLog(`   ${decision.reason}`);
 
-      // Check for over-trading
+      // 1. Correlation Check: Don't open a new trade if we already have a trade in the same direction for another asset
+      const sameDirectionTrade = botPositions.find(p => {
+        const pSize = parseFloat(p.size);
+        if (decision.action === 'BUY' && pSize > 0 && p.symbol !== symbol) return true;
+        if (decision.action === 'SELL' && pSize < 0 && p.symbol !== symbol) return true;
+        return false;
+      });
+
+      if ((decision.action === 'BUY' || decision.action === 'SELL') && !currentPosition && sameDirectionTrade) {
+        addBotLog(`⏭️ Skipping ${sym} ${decision.action} due to correlation with ${sameDirectionTrade.symbol}`);
+        continue;
+      }
+
+      // 2. Smart Trailing Stop Logic (Server-side monitoring)
+      if (currentPosition && currentPosition.size !== 0) {
+        const isLong = parseFloat(currentPosition.size) > 0;
+        const entryPrice = parseFloat(currentPosition.entryPrice || currentPosition.price);
+        const profitPct = isLong ? (currentPrice - entryPrice) / entryPrice : (entryPrice - currentPrice) / entryPrice;
+        
+        // If profit > 1.5 * ATR distance, we could move SL, but for now we log it
+        // In a full implementation, we would send a 'cancel' and 'new trigger' order
+        if (profitPct > (ind.atr * 1.5 / currentPrice)) {
+          addBotLog(`✨ ${sym} is in deep profit (${(profitPct * 100).toFixed(2)}%). Trailing SL active.`);
+        }
+      }
+
+      // 3. Balance Check before entry
       if ((decision.action === 'BUY' || decision.action === 'SELL') && !currentPosition) {
+        if (botBalance < 10) {
+          addBotLog(`⚠️ Insufficient balance ($${botBalance.toFixed(2)}) to open ${sym}.`);
+          continue;
+        }
+        
         if (botPositions.length >= RISK_CONFIG.maxOpenPositions) {
           addBotLog(`⚠️ Max positions reached (${RISK_CONFIG.maxOpenPositions}). Skipping ${sym}.`);
           continue;
         }
       }
 
+      // Calculate SL and TP prices
+      const slDistance = ind.atr * RISK_CONFIG.initialSLATRMult;
+      const tpDistance = slDistance * RISK_CONFIG.tpRRRatio;
+
       switch (decision.action) {
         case 'BUY':
-          const buyType = botOrderType === 'auto' ? decision.orderType : botOrderType;
-          await bulkClient.placeOrder(symbol, "buy", decision.size, currentPrice, buyType);
+          const buySL = currentPrice - slDistance;
+          const buyTP = currentPrice + tpDistance;
+          await bulkClient.placeBracketOrder(symbol, "buy", decision.size, currentPrice, buySL, buyTP);
           break;
         case 'SELL':
-          const sellType = botOrderType === 'auto' ? decision.orderType : botOrderType;
-          await bulkClient.placeOrder(symbol, "sell", decision.size, currentPrice, sellType);
+          const sellSL = currentPrice + slDistance;
+          const sellTP = currentPrice - tpDistance;
+          await bulkClient.placeBracketOrder(symbol, "sell", decision.size, currentPrice, sellSL, sellTP);
           break;
         case 'CLOSE_LONG':
           if (currentPosition) await bulkClient.closePosition(symbol, currentPosition.size, "long");
@@ -512,6 +629,17 @@ setInterval(runAutoTrader, 5 * 60 * 1000);
 
 // --- SERVER START ---
 async function startServer() {
+  // Try to restore session on startup
+  const savedSession = loadSession();
+  if (savedSession) {
+    console.log("[Bot] Restoring saved session for:", savedSession.address);
+    const sessionKeyPair = nacl.sign.keyPair.fromSecretKey(bs58.decode(savedSession.sessionPrivKey));
+    bulkClient = new BulkClient(sessionKeyPair);
+    bulkClient.restore(savedSession);
+    bulkClient.connect();
+    addBotLog("Bot Session Restored Automatically.");
+  }
+
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });

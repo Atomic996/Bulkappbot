@@ -459,24 +459,43 @@ class BulkClient {
           console.log(`[BulkWS] Account Update Received: ${msg.data?.type}`);
           if (msg.data?.type === "accountSnapshot" || msg.data?.type === "accountUpdate") {
             const margin = msg.data.margin || {};
-            const newBalance = parseFloat(margin.availableBalance || margin.totalMarginBalance || margin.withdrawableBalance || "0");
+            
+            // Try different balance fields as the API might vary
+            const newBalance = parseFloat(
+              margin.availableBalance || 
+              margin.totalMarginBalance || 
+              margin.withdrawableBalance || 
+              margin.equity ||
+              "0"
+            );
             
             if (!isNaN(newBalance)) {
               botBalance = newBalance;
-              console.log(`[BulkWS] Balance Updated: $${botBalance}`);
+              console.log(`[BulkWS] Balance Updated for ${this.address}: $${botBalance}`);
             } else {
-              console.warn(`[BulkWS] Received invalid balance:`, margin);
+              console.warn(`[BulkWS] Received invalid balance data:`, margin);
             }
             
             if (msg.data.positions) {
               botPositions = msg.data.positions;
+              console.log(`[BulkWS] Positions Updated for ${this.address}: ${botPositions.length} active`);
             }
             
-            broadcast({ type: "bot_update", data: { balance: botBalance, positions: botPositions } });
+            broadcast({ 
+              type: "bot_update", 
+              data: { 
+                balance: botBalance, 
+                positions: botPositions,
+                address: this.address,
+                hasSession: true
+              } 
+            });
           }
         } else if (msg.type === "error") {
-          console.error(`[BulkWS] Error:`, msg.message);
+          console.error(`[BulkWS] Error for ${this.address}:`, msg.message);
           addBotLog(`❌ Exchange Error: ${msg.message}`);
+        } else if (msg.type === "info") {
+          console.log(`[BulkWS] Info:`, msg.message);
         }
       } catch (e) {
         console.error("[BulkWS] Message Parse Error:", e);
@@ -772,14 +791,14 @@ async function startServer() {
     const wasmPath = path.join(__dirname, "node_modules", "bulk-keychain-wasm", "bulk_keychain_wasm_bg.wasm");
     if (fs.existsSync(wasmPath)) {
       const wasmBuffer = fs.readFileSync(wasmPath);
-      await init(wasmBuffer);
+      await init({ module_or_path: wasmBuffer });
       console.log("[WASM] bulk-keychain initialized from buffer");
     } else {
       // Fallback for different environments
       const altPath = path.join(process.cwd(), "node_modules", "bulk-keychain-wasm", "bulk_keychain_wasm_bg.wasm");
       if (fs.existsSync(altPath)) {
         const wasmBuffer = fs.readFileSync(altPath);
-        await init(wasmBuffer);
+        await init({ module_or_path: wasmBuffer });
         console.log("[WASM] bulk-keychain initialized from alt buffer");
       } else {
         await init();
@@ -795,14 +814,17 @@ async function startServer() {
   if (savedSession) {
     console.log("[Bot] Found saved session for:", savedSession.address);
     try {
-      const sessionKeypair = WasmKeypair.fromBase58(savedSession.sessionPrivKey);
-      bulkClient = new BulkClient(sessionKeypair);
-      bulkClient.setToken(savedSession.token);
-      bulkClient.setAddress(savedSession.address);
-      bulkClient.connect();
-      botEnabled = savedSession.botEnabled ?? true;
-      botStatus = botEnabled ? "Monitoring" : "Idle";
-      addBotLog("Bot Session Restored from Local Storage.");
+      const keyStr = savedSession.agentPrivKey || savedSession.sessionPrivKey;
+      if (keyStr) {
+        const keypair = WasmKeypair.fromBase58(keyStr);
+        bulkClient = new BulkClient(keypair);
+        bulkClient.setToken(savedSession.token);
+        bulkClient.setAddress(savedSession.address);
+        bulkClient.connect();
+        botEnabled = savedSession.botEnabled ?? true;
+        botStatus = botEnabled ? "Monitoring" : "Idle";
+        addBotLog(`Bot Session Restored for ${savedSession.address.slice(0, 6)}...`);
+      }
     } catch (e) {
       console.error("Failed to restore session:", e);
     }

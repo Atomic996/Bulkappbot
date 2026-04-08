@@ -256,23 +256,58 @@ export const TradingBot: React.FC = () => {
       const finalized = prepared.finalize(signature);
       
       // 5. Submit to backend
-      const res = await axios.post(`${BACKEND_URL}/api/bot/auth/agent`, {
+      await axios.post(`${BACKEND_URL}/api/bot/auth/agent`, {
         address: publicKey.toBase58(),
         agentPubKey,
-        agentPrivKey, // We send the private key to the server so it can trade 24/7
+        agentPrivKey,
         finalized
       });
       
-      if (res.data.success) {
-        // Save agent privkey locally too just in case
-        localStorage.setItem('bot_agent_privkey', agentPrivKey);
-        fetchStatus();
-      } else {
-        setError(res.data.error || "Agent authorization failed");
-      }
+      localStorage.setItem('bot_agent_privkey', agentPrivKey);
+      
+      // 6. Now proceed to SIWS to get the session token
+      await startSIWS();
+      
     } catch (err: any) {
       console.error("Agent Authorization Error:", err);
       setError(err.message || "Failed to authorize agent");
+      setIsLoading(false);
+    }
+  };
+
+  const startSIWS = async () => {
+    if (!connected || !publicKey || !signMessage) return;
+    
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const address = publicKey.toBase58();
+      
+      // 1. Init SIWS
+      const initRes = await axios.post(`${BACKEND_URL}/api/bot/auth/init`, { address });
+      const { message } = initRes.data;
+      
+      // 2. Sign Message
+      const encodedMessage = new TextEncoder().encode(message);
+      const signatureBytes = await signMessage(encodedMessage);
+      const signature = bs58.encode(signatureBytes);
+      
+      // 3. Start Session
+      const startRes = await axios.post(`${BACKEND_URL}/api/bot/auth/start`, {
+        address,
+        message,
+        signature
+      });
+      
+      if (startRes.data.success) {
+        fetchStatus();
+      } else {
+        setError("SIWS failed");
+      }
+    } catch (err: any) {
+      console.error("SIWS Error:", err);
+      setError(err.response?.data?.error || "Failed to sign in");
     } finally {
       setIsLoading(false);
     }
@@ -294,6 +329,14 @@ export const TradingBot: React.FC = () => {
         <div className="flex items-center gap-4">
           {status.hasSession && (
             <div className="flex items-center gap-2">
+              <button
+                onClick={fetchStatus}
+                disabled={isLoading}
+                className="p-3 rounded-full bg-zinc-900 border border-white/10 text-zinc-500 hover:text-white transition-all"
+                title="Refresh Data"
+              >
+                <Activity size={14} className={isLoading ? "animate-spin" : ""} />
+              </button>
               <button
                 onClick={toggleOrderType}
                 className={cn(
@@ -377,18 +420,27 @@ export const TradingBot: React.FC = () => {
             </p>
 
             {connected && (
-              <button
-                onClick={authorizeAgent}
-                disabled={isLoading || !isWasmReady}
-                className="mt-4 px-8 py-4 bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-800 text-white font-black uppercase tracking-widest text-xs rounded-full transition-all shadow-[0_0_30px_rgba(37,99,235,0.3)] flex items-center gap-3 group"
-              >
-                {isLoading ? (
-                  <Activity size={16} className="animate-spin" />
-                ) : (
-                  <UserCheck size={16} className="group-hover:scale-110 transition-transform" />
-                )}
-                {isLoading ? "Authorizing..." : "Authorize Trading Agent"}
-              </button>
+              <div className="flex flex-col gap-3 w-full max-w-xs">
+                <button
+                  onClick={authorizeAgent}
+                  disabled={isLoading || !isWasmReady}
+                  className="px-8 py-4 bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-800 text-white font-black uppercase tracking-widest text-xs rounded-full transition-all shadow-[0_0_30px_rgba(37,99,235,0.3)] flex items-center justify-center gap-3 group"
+                >
+                  {isLoading ? (
+                    <Activity size={16} className="animate-spin" />
+                  ) : (
+                    <UserCheck size={16} className="group-hover:scale-110 transition-transform" />
+                  )}
+                  {isLoading ? "Processing..." : "Authorize & Sign In"}
+                </button>
+                <button
+                  onClick={startSIWS}
+                  disabled={isLoading}
+                  className="px-8 py-3 bg-zinc-900 border border-white/10 hover:border-white/20 text-zinc-400 hover:text-white font-black uppercase tracking-widest text-[10px] rounded-full transition-all flex items-center justify-center gap-3"
+                >
+                  Just Sign In (No Agent)
+                </button>
+              </div>
             )}
           </div>
 

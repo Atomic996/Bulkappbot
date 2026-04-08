@@ -44,14 +44,18 @@ const BACKEND_URL = typeof window !== 'undefined' ? window.location.origin : "";
 export const TradingBot: React.FC = () => {
   const { publicKey, signMessage, connected, disconnect } = useWallet();
   const { setVisible } = useWalletModal();
-  const [status, setStatus] = useState<BotStatus>({
-    enabled: false,
-    status: "Initializing...",
-    balance: 0,
-    positions: [],
-    logs: [],
-    hasSession: false,
-    address: null
+  const [status, setStatus] = useState<BotStatus>(() => {
+    // Initial state from localStorage to prevent flicker
+    const saved = typeof window !== 'undefined' ? localStorage.getItem('bot_has_session') : null;
+    return {
+      enabled: false,
+      status: saved ? "Resuming..." : "Initializing...",
+      balance: 0,
+      positions: [],
+      logs: [],
+      hasSession: saved === 'true',
+      address: typeof window !== 'undefined' ? localStorage.getItem('bot_address') : null
+    };
   });
   const [isLoading, setIsLoading] = useState(false);
   const [isAuthorizing, setIsAuthorizing] = useState(false);
@@ -96,6 +100,17 @@ export const TradingBot: React.FC = () => {
           positions: res.data.positions || [],
           logs: res.data.logs || []
         }));
+        
+        // Persist session state in frontend to prevent flicker on reload
+        if (typeof window !== 'undefined') {
+          if (res.data.hasSession) {
+            localStorage.setItem('bot_has_session', 'true');
+            if (res.data.address) localStorage.setItem('bot_address', res.data.address);
+          } else {
+            localStorage.removeItem('bot_has_session');
+            localStorage.removeItem('bot_address');
+          }
+        }
       }
     } catch (err: any) {
       if (axios.isAxiosError(err)) {
@@ -232,9 +247,11 @@ export const TradingBot: React.FC = () => {
         positions: []
       }));
       
-      // 4. Clear wallet adapter storage
+      // 4. Clear local storage
       if (typeof window !== 'undefined') {
         localStorage.removeItem('walletName');
+        localStorage.removeItem('bot_has_session');
+        localStorage.removeItem('bot_address');
       }
     } catch (err) {
       console.error("Logout error:", err);

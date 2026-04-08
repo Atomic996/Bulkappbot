@@ -347,7 +347,6 @@ class BulkClient {
     this.address = data.address;
     botAddress = data.address;
     this.sessionKeyPair = nacl.sign.keyPair.fromSecretKey(bs58.decode(data.sessionPrivKey));
-    botEnabled = data.botEnabled;
     return true;
   }
 
@@ -668,12 +667,19 @@ async function startServer() {
   // Try to restore session on startup
   const savedSession = loadSession();
   if (savedSession) {
-    console.log("[Bot] Restoring saved session for:", savedSession.address);
-    const sessionKeyPair = nacl.sign.keyPair.fromSecretKey(bs58.decode(savedSession.sessionPrivKey));
-    bulkClient = new BulkClient(sessionKeyPair);
-    bulkClient.restore(savedSession);
-    bulkClient.connect();
-    addBotLog("Bot Session Restored Automatically.");
+    console.log("[Bot] Found saved session for:", savedSession.address);
+    try {
+      const sessionKeyPair = nacl.sign.keyPair.fromSecretKey(bs58.decode(savedSession.sessionPrivKey));
+      bulkClient = new BulkClient(sessionKeyPair);
+      bulkClient.setToken(savedSession.token);
+      bulkClient.setAddress(savedSession.address);
+      bulkClient.connect();
+      botEnabled = savedSession.botEnabled ?? true;
+      botStatus = botEnabled ? "Monitoring" : "Idle";
+      addBotLog("Bot Session Restored from Local Storage.");
+    } catch (e) {
+      console.error("Failed to restore session:", e);
+    }
   }
 
   if (process.env.NODE_ENV !== "production") {

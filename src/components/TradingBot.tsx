@@ -260,11 +260,17 @@ export const TradingBot: React.FC = () => {
       
       // 3. Request signature from user's wallet
       const signatureBytes = await signMessage(prepared.messageBytes);
-      const signature = bs58.encode(
-        signatureBytes instanceof Uint8Array
-          ? signatureBytes
-          : new Uint8Array(Object.values(signatureBytes as any))
-      );
+      
+      let finalSignature: Uint8Array;
+      if (signatureBytes instanceof Uint8Array) {
+        finalSignature = signatureBytes;
+      } else if ((signatureBytes as any).signature instanceof Uint8Array) {
+        finalSignature = (signatureBytes as any).signature;
+      } else {
+        finalSignature = new Uint8Array(Object.values(signatureBytes as any));
+      }
+      
+      const signature = bs58.encode(finalSignature);
       
       // 4. Finalize the authorization
       const finalized = prepared.finalize(signature);
@@ -309,12 +315,16 @@ export const TradingBot: React.FC = () => {
       const encodedMessage = new TextEncoder().encode(message);
       const signatureBytes = await signMessage(encodedMessage);
       
-      // Correct conversion for bs58 v6
-      const signature = bs58.encode(
-        signatureBytes instanceof Uint8Array
-          ? signatureBytes
-          : new Uint8Array(Object.values(signatureBytes as any))
-      );
+      let finalSignature: Uint8Array;
+      if (signatureBytes instanceof Uint8Array) {
+        finalSignature = signatureBytes;
+      } else if ((signatureBytes as any).signature instanceof Uint8Array) {
+        finalSignature = (signatureBytes as any).signature;
+      } else {
+        finalSignature = new Uint8Array(Object.values(signatureBytes as any));
+      }
+      
+      const signature = bs58.encode(finalSignature);
       
       // 3. Start Session
       const startRes = await axios.post(`${RAILWAY_BACKEND_URL}/api/bot/auth/start`, {

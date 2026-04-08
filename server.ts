@@ -160,24 +160,32 @@ botRouter.post("/auth/init", async (req: Request, res: Response) => {
     });
     
     const r_init_data = await r_init_res.json() as any;
+    console.log("[Auth] Privy SIWS Init Response:", JSON.stringify(r_init_data));
+    
     const nonce = r_init_data.nonce;
-    const ts = new Date().toISOString().split('.')[0] + 'Z'; // Standard ISO without milliseconds
+    const ts = new Date().toISOString();
     
     // 2. Generate a temporary session key for the bot
     const sessionKeypair = new WasmKeypair();
     const sessionPubKey = sessionKeypair.pubkey;
     const sessionPrivKey = sessionKeypair.toBase58();
 
-    // 3. Build the SIWS message (Strict format for Privy)
-    const message = 
-      `early.bulk.trade wants you to sign in with your Solana account:\n` +
-      `${address}\n\n` +
-      `Sign in to early.bulk.trade\n\n` +
-      `URI: https://early.bulk.trade\n` +
-      `Version: 1\n` +
-      `Chain ID: mainnet\n` +
-      `Nonce: ${nonce}\n` +
-      `Issued At: ${ts}`;
+    // 3. Build the SIWS message
+    // If Privy provides a message, use it. Otherwise build a standard one.
+    let message = r_init_data.message;
+    
+    if (!message) {
+      // Fallback to a very standard SIWS format if Privy didn't provide one
+      message = 
+        `early.bulk.trade wants you to sign in with your Solana account:\n` +
+        `${address}\n\n` +
+        `Sign in to early.bulk.trade\n\n` +
+        `URI: https://early.bulk.trade\n` +
+        `Version: 1\n` +
+        `Chain ID: mainnet\n` +
+        `Nonce: ${nonce}\n` +
+        `Issued At: ${ts}`;
+    }
 
     // 4. Store session in memory AND on disk (survives restarts)
     const sessionData = { message, sessionPrivKey, timestamp: Date.now() };

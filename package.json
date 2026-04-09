@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "start": "npm run build && tsx server.ts",
-    "build": "vite build",
+    "start": "NODE_OPTIONS='--max-old-space-size=1024' npm run build && tsx server.ts",
+    "build": "NODE_OPTIONS='--max-old-space-size=1024' vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit"

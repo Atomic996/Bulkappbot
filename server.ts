@@ -175,10 +175,11 @@ botRouter.post("/auth/init", async (req: Request, res: Response) => {
     const sessionPrivKey = sessionKeypair.toBase58();
 
     // 3. Build the SIWS message
-    // Minimal standard SIWS format for Solana
+    // Simplest possible SIWS message for Solana
     const message = 
       `early.bulk.trade wants you to sign in with your Solana account:\n` +
       `${address}\n\n` +
+      `Sign in to early.bulk.trade\n\n` +
       `URI: https://early.bulk.trade\n` +
       `Version: 1\n` +
       `Chain ID: mainnet\n` +
@@ -918,29 +919,29 @@ async function startServer() {
     }
   }
 
-  // Use Vite middleware if dist is missing or in dev mode (saves memory on Railway)
+  // RADICAL SOLUTION: Serve static files ONLY in production. 
+  // No Vite engine on Railway to save memory.
   const distPath = path.join(process.cwd(), "dist");
-  const useViteMiddleware = process.env.NODE_ENV !== "production" || !fs.existsSync(distPath) || process.env.FORCE_VITE === "true";
-
-  if (useViteMiddleware) {
-    console.log("[Server] Using Vite Middleware (Build missing or forced)");
-    const { createServer: createViteServer } = await import("vite");
-    const vite = await createViteServer({ 
-      server: { middlewareMode: true }, 
-      appType: "spa" 
-    });
-    app.use(vite.middlewares);
-  } else {
-    console.log("[Server] Serving static files from dist");
+  
+  if (process.env.NODE_ENV === "production") {
+    console.log("[Server] Production Mode: Serving static files from /dist");
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
       const indexPath = path.join(distPath, "index.html");
       if (fs.existsSync(indexPath)) {
         res.sendFile(indexPath);
       } else {
-        res.status(500).send("<h1>Frontend Error</h1><p>index.html not found in dist folder.</p>");
+        res.status(500).send("<h1>Frontend Error</h1><p>Critical: Build files missing. Please Redeploy.</p>");
       }
     });
+  } else {
+    console.log("[Server] Development Mode: Using Vite Middleware");
+    const { createServer: createViteServer } = await import("vite");
+    const vite = await createViteServer({ 
+      server: { middlewareMode: true }, 
+      appType: "spa" 
+    });
+    app.use(vite.middlewares);
   }
 
   const PORT = Number(process.env.PORT) || 3000;

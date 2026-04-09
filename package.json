@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx server.ts",
     "start": "tsx server.ts",
-    "build": "NODE_OPTIONS='--max-old-space-size=1024' vite build",
+    "build": "echo 'Skipping build, using pre-built dist folder'",
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit"

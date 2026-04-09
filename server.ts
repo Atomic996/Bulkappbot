@@ -153,10 +153,14 @@ botRouter.post("/auth/init", async (req: Request, res: Response) => {
         "Privy-App-Id": PRIVY_APP_ID,
         "Origin": "https://early.bulk.trade",
         "Referer": "https://early.bulk.trade/",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "application/json"
       },
-      body: JSON.stringify({ address })
+      body: JSON.stringify({ 
+        address,
+        domain: "early.bulk.trade",
+        uri: "https://early.bulk.trade"
+      })
     });
     
     const r_init_data = await r_init_res.json() as any;
@@ -171,21 +175,15 @@ botRouter.post("/auth/init", async (req: Request, res: Response) => {
     const sessionPrivKey = sessionKeypair.toBase58();
 
     // 3. Build the SIWS message
-    // If Privy provides a message, use it. Otherwise build a standard one.
-    let message = r_init_data.message;
-    
-    if (!message) {
-      // Fallback to a very standard SIWS format if Privy didn't provide one
-      message = 
-        `early.bulk.trade wants you to sign in with your Solana account:\n` +
-        `${address}\n\n` +
-        `Sign in to early.bulk.trade\n\n` +
-        `URI: https://early.bulk.trade\n` +
-        `Version: 1\n` +
-        `Chain ID: mainnet\n` +
-        `Nonce: ${nonce}\n` +
-        `Issued At: ${ts}`;
-    }
+    // Standard SIWS format for Solana with CAIP-2 Chain ID and no statement
+    const message = 
+      `early.bulk.trade wants you to sign in with your Solana account:\n` +
+      `${address}\n\n` +
+      `URI: https://early.bulk.trade\n` +
+      `Version: 1\n` +
+      `Chain ID: solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp\n` +
+      `Nonce: ${nonce}\n` +
+      `Issued At: ${ts}`;
 
     // 4. Store session in memory AND on disk (survives restarts)
     const sessionData = { message, sessionPrivKey, timestamp: Date.now() };
@@ -428,7 +426,8 @@ class BulkClient {
     };
 
     console.log("[Auth] Authenticating with Privy for address:", address);
-    console.log("[Auth] Full Message for Privy:\n" + message);
+    console.log("[Auth] Message used for signing:\n" + message);
+    console.log("[Auth] Signature (base58):", signature);
 
     try {
       const r_auth_res = await fetch(`${PRIVY_URL}/siws/authenticate`, {

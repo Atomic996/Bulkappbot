@@ -87,6 +87,7 @@ export const TradingBot: React.FC = () => {
 
   React.useEffect(() => {
     const wsUrl = RAILWAY_BACKEND_URL.replace('http', 'ws') + '/ws/bulk';
+    console.log("[Bot] Connecting to Backend:", RAILWAY_BACKEND_URL);
     const ws = new WebSocket(wsUrl);
     
     ws.onopen = () => console.log("[WS] Connected to backend");

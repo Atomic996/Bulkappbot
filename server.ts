@@ -175,12 +175,15 @@ botRouter.post("/auth/init", async (req: Request, res: Response) => {
     const sessionPrivKey = sessionKeypair.toBase58();
 
     // 3. Build the SIWS message
-    // Simplest possible SIWS message for Solana
+    // DYNAMIC DOMAIN: Use the actual host from the request to avoid domain mismatch in wallets
+    const domain = req.headers.host || "bulkappbot-production.up.railway.app";
+    const uri = `https://${domain}`;
+    
     const message = 
-      `early.bulk.trade wants you to sign in with your Solana account:\n` +
+      `${domain} wants you to sign in with your Solana account:\n` +
       `${address}\n\n` +
-      `Sign in to early.bulk.trade\n\n` +
-      `URI: https://early.bulk.trade\n` +
+      `Sign in to ${domain}\n\n` +
+      `URI: ${uri}\n` +
       `Version: 1\n` +
       `Chain ID: mainnet\n` +
       `Nonce: ${nonce}\n` +
@@ -919,23 +922,23 @@ async function startServer() {
     }
   }
 
-  // RADICAL SOLUTION: Serve static files ONLY in production. 
-  // No Vite engine on Railway to save memory.
+  // FINAL RADICAL SOLUTION: Serve dist if it exists, otherwise use Vite.
+  // This ensures Railway ALWAYS shows the UI using the pre-built files I just generated.
   const distPath = path.join(process.cwd(), "dist");
   
-  if (process.env.NODE_ENV === "production") {
-    console.log("[Server] Production Mode: Serving static files from /dist");
+  if (fs.existsSync(distPath)) {
+    console.log("[Server] Found pre-built assets. Serving statically for maximum stability.");
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
       const indexPath = path.join(distPath, "index.html");
       if (fs.existsSync(indexPath)) {
         res.sendFile(indexPath);
       } else {
-        res.status(500).send("<h1>Frontend Error</h1><p>Critical: Build files missing. Please Redeploy.</p>");
+        res.status(500).send("<h1>Frontend Error</h1><p>index.html missing in dist. Please Redeploy.</p>");
       }
     });
   } else {
-    console.log("[Server] Development Mode: Using Vite Middleware");
+    console.log("[Server] No dist folder found. Falling back to Vite Middleware.");
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({ 
       server: { middlewareMode: true }, 

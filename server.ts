@@ -167,7 +167,7 @@ botRouter.post("/auth/init", async (req: Request, res: Response) => {
     console.log("[Auth] Privy SIWS Init Response:", JSON.stringify(r_init_data));
     
     const nonce = r_init_data.nonce;
-    const ts = new Date().toISOString();
+    const ts = new Date().toISOString().split('.')[0] + 'Z';
     
     // 2. Generate a temporary session key for the bot
     const sessionKeypair = new WasmKeypair();
@@ -175,13 +175,14 @@ botRouter.post("/auth/init", async (req: Request, res: Response) => {
     const sessionPrivKey = sessionKeypair.toBase58();
 
     // 3. Build the SIWS message
-    // Standard SIWS format for Solana with CAIP-2 Chain ID and no statement
+    // Standard SIWS format for Solana
     const message = 
       `early.bulk.trade wants you to sign in with your Solana account:\n` +
       `${address}\n\n` +
+      `Sign in to early.bulk.trade\n\n` +
       `URI: https://early.bulk.trade\n` +
       `Version: 1\n` +
-      `Chain ID: solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp\n` +
+      `Chain ID: mainnet\n` +
       `Nonce: ${nonce}\n` +
       `Issued At: ${ts}`;
 
@@ -924,8 +925,31 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => res.sendFile(path.join(distPath, "index.html")));
+    if (fs.existsSync(distPath)) {
+      app.use(express.static(distPath));
+      app.get("*", (req, res) => {
+        const indexPath = path.join(distPath, "index.html");
+        if (fs.existsSync(indexPath)) {
+          res.sendFile(indexPath);
+        } else {
+          res.status(500).send("<h1>Frontend Error</h1><p>index.html not found in dist folder.</p>");
+        }
+      });
+    } else {
+      console.error("CRITICAL: 'dist' folder not found.");
+      app.get("*", (req, res) => {
+        res.status(500).send(`
+          <div style="font-family:sans-serif;padding:40px;text-align:center;">
+            <h1 style="color:#ef4444;">Frontend Build Missing</h1>
+            <p>The 'dist' folder was not found on the server.</p>
+            <p>Please ensure <strong>npm run build</strong> is executed during deployment.</p>
+            <div style="margin-top:20px;padding:20px;background:#f3f4f6;border-radius:8px;display:inline-block;">
+              <code>Current Path: ${process.cwd()}</code>
+            </div>
+          </div>
+        `);
+      });
+    }
   }
 
   const PORT = Number(process.env.PORT) || 3000;

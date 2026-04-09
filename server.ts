@@ -8,18 +8,13 @@ import axios from "axios";
 import fetch from "node-fetch";
 import nacl from "tweetnacl";
 import bs58 from "bs58";
-import init, { WasmKeypair, WasmSigner } from "bulk-keychain-wasm";
 import { computeIndicators, calculateTechnicalScore, getTradeDecision, RISK_CONFIG } from "./src/lib/indicators.js";
 import { fetchHistoricalData } from "./src/lib/api.js";
-import { analyzeNews, calculateNewsScore } from "./src/lib/gemini.js";
-import { analyzeSentimentAlgorithmic, calculateAlgorithmicNewsScore } from "./src/lib/sentiment.js";
-import { NewsItem } from "./src/types.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const BULK_WS_URL = "wss://api.early.bulk.trade/ws";
-const BULK_API_URL = "https://api.early.bulk.trade";
+const BULK_WS_URL = "wss://exchange-ws1.bulk.trade";
 const ORIGIN_URL = "https://early.bulk.trade";
 const PRIVY_APP_ID = "cmbuls93q01jol20lf0ak0plb";
 const PRIVY_URL = "https://auth.privy.io/api/v1";
@@ -34,27 +29,6 @@ let botPositions: any[] = [];
 let botLogs: string[] = [];
 let botOrderType: 'market' | 'limit' | 'auto' = 'auto';
 
-const SESSION_FILE = path.join(__dirname, "bot_session.json");
-
-const saveSession = (data: any) => {
-  try {
-    fs.writeFileSync(SESSION_FILE, JSON.stringify(data));
-  } catch (e) {
-    console.error("Failed to save session:", e);
-  }
-};
-
-const loadSession = () => {
-  try {
-    if (fs.existsSync(SESSION_FILE)) {
-      return JSON.parse(fs.readFileSync(SESSION_FILE, "utf8"));
-    }
-  } catch (e) {
-    console.error("Failed to load session:", e);
-  }
-  return null;
-};
-
 const pendingSessions = new Map<string, { message: string, sessionPrivKey: string, timestamp: number }>();
 
 const app = express();
@@ -65,6 +39,7 @@ app.use(express.json());
 const botRouter = express.Router();
 
 botRouter.get("/status", (req: Request, res: Response) => {
+  console.log(`[API] Status requested. Balance: $${botBalance}, Session: ${!!bulkClient}`);
   res.json({
     enabled: botEnabled,
     status: botStatus,
@@ -73,7 +48,6 @@ botRouter.get("/status", (req: Request, res: Response) => {
     logs: botLogs,
     address: botAddress,
     hasSession: !!bulkClient,
-    exchangeConnected: bulkClient?.isWsConnected() || false,
     orderType: botOrderType
   });
 });
@@ -86,55 +60,6 @@ botRouter.post("/settings", (req: Request, res: Response) => {
     res.json({ success: true, orderType: botOrderType });
   } else {
     res.status(400).json({ error: "Invalid order type" });
-  }
-});
-
-botRouter.post("/auth/agent", async (req: Request, res: Response) => {
-  const { address, agentPubKey, agentPrivKey, finalized } = req.body;
-  if (!address || !agentPubKey || !agentPrivKey || !finalized) {
-    return res.status(400).json({ error: "Missing required fields" });
-  }
-
-  try {
-    console.log(`[Auth] Authorizing Agent for: ${address}`);
-    
-    const agentKeypair = WasmKeypair.fromBase58(agentPrivKey);
-    
-    // Create or Update client with Agent Signer
-    if (!bulkClient) {
-      bulkClient = new BulkClient(agentKeypair);
-    } else {
-      bulkClient.updateSigner(agentKeypair);
-    }
-    
-    botAddress = address;
-    bulkClient.setAddress(address);
-    
-    // Submit to exchange
-    try {
-      await axios.post(`${BULK_API_URL}/api/v1/action`, {
-        actions: JSON.parse(finalized.actions),
-        nonce: finalized.nonce,
-        account: finalized.account,
-        signer: finalized.signer,
-        signature: finalized.signature
-      }, {
-        headers: { "Content-Type": "application/json", "Origin": ORIGIN_URL }
-      });
-      addBotLog("Agent Authorization synced with Exchange.");
-    } catch (e) {}
-
-    const currentSession = loadSession() || {};
-    saveSession({
-      ...currentSession,
-      address,
-      agentPrivKey,
-      botEnabled: true
-    });
-
-    res.json({ success: true });
-  } catch (err: any) {
-    res.status(500).json({ error: "Agent Authorization Failed", message: err.message });
   }
 });
 
@@ -153,50 +78,39 @@ botRouter.post("/auth/init", async (req: Request, res: Response) => {
         "Privy-App-Id": PRIVY_APP_ID,
         "Origin": "https://early.bulk.trade",
         "Referer": "https://early.bulk.trade/",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         "Accept": "application/json"
       },
-      body: JSON.stringify({ 
-        address,
-        domain: "early.bulk.trade",
-        uri: "https://early.bulk.trade"
-      })
+      body: JSON.stringify({ address })
     });
     
     const r_init_data = await r_init_res.json() as any;
-    console.log("[Auth] Privy SIWS Init Response:", JSON.stringify(r_init_data));
-    
     const nonce = r_init_data.nonce;
-    const ts = new Date().toISOString().split('.')[0] + 'Z';
+    const ts = new Date().toISOString().replace(".000Z", "Z");
     
     // 2. Generate a temporary session key for the bot
-    const sessionKeypair = new WasmKeypair();
-    const sessionPubKey = sessionKeypair.pubkey;
-    const sessionPrivKey = sessionKeypair.toBase58();
+    const sessionKeyPair = nacl.sign.keyPair();
+    const sessionPubKey = bs58.encode(sessionKeyPair.publicKey);
+    const sessionPrivKey = bs58.encode(sessionKeyPair.secretKey);
 
-    // 3. Build the SIWS message
-    // DYNAMIC DOMAIN: Use the actual host from the request to avoid domain mismatch in wallets
-    const domain = req.headers.host || "bulkappbot-production.up.railway.app";
-    const uri = `https://${domain}`;
-    
+    // 3. Build the SIWS message (Exact format required by Privy)
     const message = 
-      `${domain} wants you to sign in with your Solana account:\n` +
-      `${address}\n\n` +
-      `Sign in to ${domain}\n\n` +
-      `URI: ${uri}\n` +
+      `early.bulk.trade wants you to sign in with your Solana account:\n${address}\n\n` +
+      `You are proving you own ${address}.\n\n` +
+      `URI: https://early.bulk.trade\n` +
       `Version: 1\n` +
       `Chain ID: mainnet\n` +
       `Nonce: ${nonce}\n` +
-      `Issued At: ${ts}`;
+      `Issued At: ${ts}\n` +
+      `Resources:\n- https://privy.io`;
 
-    // 4. Store session in memory AND on disk (survives restarts)
-    const sessionData = { message, sessionPrivKey, timestamp: Date.now() };
-    pendingSessions.set(address, sessionData);
-
-    // Save to disk - used if server restarts before signing
-    const existing = loadSession() || {};
-    saveSession({ ...existing, pendingSession: { address, ...sessionData } });
-
+    // 4. Store session data in memory (Railway is persistent)
+    pendingSessions.set(address, {
+      message,
+      sessionPrivKey,
+      timestamp: Date.now()
+    });
+    
     console.log(`[Auth] Message generated and stored for ${address}`);
     res.json({ nonce, message });
   } catch (err: any) {
@@ -212,68 +126,34 @@ botRouter.post("/auth/init", async (req: Request, res: Response) => {
 
 botRouter.post("/auth/start", async (req: Request, res: Response) => {
   const { address, message, signature } = req.body;
+  
+  // 1. Retrieve session from memory
   const sessionData = pendingSessions.get(address);
 
   if (!sessionData || sessionData.message !== message) {
-    return res.status(400).json({ error: "Invalid or expired session request." });
+    return res.status(400).json({ error: "Invalid or expired session request. Please refresh and try again." });
   }
 
-  // Preserve existing agent signer if available
-  if (!bulkClient) {
-    const sessionKeypair = WasmKeypair.fromBase58(sessionData.sessionPrivKey);
-    bulkClient = new BulkClient(sessionKeypair);
+  if (botEnabled) {
+    bulkClient?.stop();
   }
-  
+
+  const sessionKeyPair = nacl.sign.keyPair.fromSecretKey(bs58.decode(sessionData.sessionPrivKey));
+  bulkClient = new BulkClient(sessionKeyPair);
   const ok = await bulkClient.authenticate(address, message, signature);
   
   if (ok) {
+    // Cleanup
     pendingSessions.delete(address);
+
     bulkClient.connect();
     botEnabled = true;
     botStatus = "Monitoring";
-    
-    const currentSession = loadSession() || {};
-    saveSession({
-      ...currentSession,
-      address,
-      token: bulkClient.getToken(),
-      // Only save sessionPrivKey if we don't have an agentPrivKey
-      sessionPrivKey: currentSession.agentPrivKey ? undefined : sessionData.sessionPrivKey,
-      botEnabled: true
-    });
-
+    addBotLog("Bot Authorized & Started.");
     res.json({ success: true, enabled: true });
   } else {
-    res.status(500).json({ error: "Authentication failed." });
+    res.status(500).json({ error: "Authentication failed with Privy. Check server logs." });
   }
-});
-
-botRouter.post("/auth/logout", (req: Request, res: Response) => {
-  console.log("[Auth] Logout requested. Clearing session.");
-  
-  // 1. Stop bot if running
-  if (botEnabled && bulkClient) {
-    bulkClient.stop();
-  }
-  
-  // 2. Clear memory state
-  botEnabled = false;
-  botStatus = "Disconnected";
-  botAddress = null;
-  botBalance = 0;
-  botPositions = [];
-  bulkClient = null;
-  
-  // 3. Delete session file
-  try {
-    if (fs.existsSync(SESSION_FILE)) {
-      fs.unlinkSync(SESSION_FILE);
-    }
-  } catch (e) {
-    console.error("Failed to delete session file:", e);
-  }
-  
-  res.json({ success: true });
 });
 
 botRouter.post("/toggle", async (req: Request, res: Response) => {
@@ -286,67 +166,11 @@ botRouter.post("/toggle", async (req: Request, res: Response) => {
   res.json({ success: true, enabled: botEnabled, status: botStatus });
 });
 
-botRouter.post("/trade", async (req: Request, res: Response) => {
-  if (!bulkClient) return res.status(400).json({ error: "No active session." });
-  const { symbol, side, size, price, type } = req.body;
-  try {
-    await bulkClient.placeOrder(symbol, side, size, price, type);
-    res.json({ success: true });
-  } catch (err: any) {
-    console.error("[API] Manual Trade Error:", err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-botRouter.post("/close", async (req: Request, res: Response) => {
-  if (!bulkClient) return res.status(400).json({ error: "No active session." });
-  const { symbol, size, side } = req.body;
-  try {
-    await bulkClient.closePosition(symbol, size, side);
-    res.json({ success: true });
-  } catch (err: any) {
-    console.error("[API] Close Position Error:", err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
 app.use("/api/bot", botRouter);
 
 // News Cache
 const newsCache: Record<string, { data: any; timestamp: number }> = {};
 const CACHE_TTL = 15 * 60 * 1000;
-
-async function fetchNewsInternal(symbol: string): Promise<NewsItem[]> {
-  const cacheKey = symbol.toUpperCase();
-  if (newsCache[cacheKey] && Date.now() - newsCache[cacheKey].timestamp < CACHE_TTL) {
-    return newsCache[cacheKey].data;
-  }
-
-  const newsDataApiKey = process.env.NEWSDATA_API_KEY;
-  if (!newsDataApiKey) return [];
-
-  try {
-    const response = await axios.get('https://newsdata.io/api/1/news', {
-      params: { apikey: newsDataApiKey, q: symbol.toUpperCase(), language: 'en', category: 'business,technology' },
-      timeout: 5000
-    });
-
-    if (response.data?.status === 'success' && Array.isArray(response.data.results)) {
-      const unifiedNews = response.data.results.map((n: any) => ({
-        id: n.article_id || Math.random().toString(36).substr(2, 9),
-        title: n.title,
-        url: n.link,
-        published_at: n.pubDate,
-        source: n.source_id || 'NewsData.io',
-      }));
-      newsCache[cacheKey] = { data: unifiedNews, timestamp: Date.now() };
-      return unifiedNews;
-    }
-  } catch (error) {
-    console.error(`[News] Error fetching for ${symbol}:`, error instanceof Error ? error.message : String(error));
-  }
-  return newsCache[cacheKey]?.data || [];
-}
 
 app.get("/api/news", async (req: Request, res: Response) => {
   const symbol = (req.query.symbol as string) || "BTC";
@@ -358,7 +182,7 @@ app.get("/api/news", async (req: Request, res: Response) => {
 
   const newsDataApiKey = process.env.NEWSDATA_API_KEY;
   if (!newsDataApiKey || newsDataApiKey === "") {
-    return res.json([]); // Return empty array instead of 500
+    return res.status(500).json({ error: "NEWSDATA_API_KEY is missing in environment variables" });
   }
 
   try {
@@ -397,26 +221,10 @@ class BulkClient {
   private ws: WebSocket | null = null;
   private token: string | null = null;
   private address: string | null = null;
-  private signer: WasmSigner;
+  private sessionKeyPair: nacl.SignKeyPair;
 
-  constructor(keypair: WasmKeypair) {
-    this.signer = new WasmSigner(keypair);
-  }
-
-  getToken() { return this.token; }
-  getAddress() { return this.address; }
-  
-  setToken(token: string) { this.token = token; }
-  setAddress(address: string) { this.address = address; botAddress = address; }
-  isConnected() { return this.ws !== null && this.ws.readyState === WebSocket.OPEN; }
-
-  isWsConnected() {
-    return this.ws && this.ws.readyState === WebSocket.OPEN;
-  }
-
-  updateSigner(keypair: WasmKeypair) {
-    this.signer = new WasmSigner(keypair);
-    addBotLog("Trading Signer updated to Agent Wallet.");
+  constructor(sessionKeyPair: nacl.SignKeyPair) {
+    this.sessionKeyPair = sessionKeyPair;
   }
 
   async authenticate(address: string, message: string, signature: string) {
@@ -425,13 +233,15 @@ class BulkClient {
       "Referer": "https://early.bulk.trade/", 
       "Privy-App-Id": PRIVY_APP_ID, 
       "Content-Type": "application/json",
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
       "Accept": "application/json"
     };
 
-    console.log("[Auth] Authenticating with Privy for address:", address);
-    console.log("[Auth] Message used for signing:\n" + message);
-    console.log("[Auth] Signature (base58):", signature);
+    console.log("[Auth] Authenticating with Privy:", {
+      address,
+      message_preview: message.slice(0, 50) + "...",
+      signature_preview: signature.slice(0, 20) + "..."
+    });
 
     try {
       const r_auth_res = await fetch(`${PRIVY_URL}/siws/authenticate`, {
@@ -448,7 +258,6 @@ class BulkClient {
       });
 
       const r_auth_data = await r_auth_res.json() as any;
-      console.log("[Auth] Privy Response:", JSON.stringify(r_auth_data).slice(0, 200));
       console.log("[Auth] Privy Response Success:", r_auth_data.token ? "Token Received" : "No Token");
 
       if (!r_auth_data.token) {
@@ -459,7 +268,6 @@ class BulkClient {
       this.token = r_auth_data.token;
       this.address = address;
       botAddress = address;
-      
       addBotLog(`Authenticated ${address.slice(0, 6)}...`);
       return true;
     } catch (err: any) {
@@ -468,251 +276,137 @@ class BulkClient {
     }
   }
 
-  // Restore session from saved data
-  restore(data: any) {
-    this.token = data.token;
-    this.address = data.address;
-    botAddress = data.address;
-    if (data.agentPrivKey) {
-      const agentKeypair = WasmKeypair.fromBase58(data.agentPrivKey);
-      this.signer = new WasmSigner(agentKeypair);
-    } else if (data.sessionPrivKey) {
-      const sessionKeypair = WasmKeypair.fromBase58(data.sessionPrivKey);
-      this.signer = new WasmSigner(sessionKeypair);
-    }
-    return true;
-  }
-
   connect() {
-    if (!this.token) {
-      console.warn("[BulkWS] Cannot connect: No token available.");
-      return;
-    }
-    
-    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
-      return;
-    }
-
-    const tokenPreview = this.token ? `${this.token.slice(0, 10)}...${this.token.slice(-10)}` : "null";
-    console.log(`[BulkWS] Connecting to ${BULK_WS_URL} for ${this.address} with token ${tokenPreview}`);
-    addBotLog("Connecting to Exchange...");
-
+    if (!this.token) return;
     this.ws = new WebSocket(BULK_WS_URL, { 
       headers: { 
         "Authorization": `Bearer ${this.token}`, 
-        "Origin": ORIGIN_URL,
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "Origin": ORIGIN_URL 
       } 
     });
-
-    // Add a ping interval to keep connection alive
-    const pingInterval = setInterval(() => {
-      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-        this.ws.ping();
-      }
-    }, 30000);
-
-    this.ws.on("unexpected-response", (req, res) => {
-      console.error(`[BulkWS] Unexpected response: ${res.statusCode} ${res.statusMessage}`);
-      addBotLog(`❌ Connection Rejected: ${res.statusCode} ${res.statusMessage}`);
-      
-      if (res.statusCode === 401 || res.statusCode === 403) {
-        addBotLog("⚠️ Authentication failed. Your session might be invalid.");
-      }
-    });
-
     this.ws.on("open", () => {
-      console.log(`[BulkWS] Connected successfully to ${BULK_WS_URL}`);
-      this.ws?.send(JSON.stringify({ 
-        method: "subscribe", 
-        id: 1, 
-        subscription: [{ type: "account", user: this.address }] 
-      }));
-      addBotLog("✅ Connected to Exchange.");
-      broadcast({ type: "bot_update", data: { exchangeConnected: true } });
+      console.log(`[BulkWS] Session Connected for ${this.address}`);
+      this.ws?.send(JSON.stringify({ method: "subscribe", id: 1, subscription: [{ type: "account", user: this.address }] }));
+      addBotLog("Bot Session Connected.");
     });
-
     this.ws.on("message", (data) => {
       try {
         const msg = JSON.parse(data.toString());
-        
-        if (msg.id) {
-          console.log(`[BulkWS] Response ID ${msg.id}:`, JSON.stringify(msg).slice(0, 200));
-          if (msg.status === "error") {
-            addBotLog(`❌ Trade Rejected: ${msg.error || "Unknown error"}`);
-          } else if (msg.status === "ok") {
-            addBotLog(`✅ Trade Confirmed.`);
-          }
-        }
-
         if (msg.type === "account") {
+          console.log(`[BulkWS] Account Update Received: ${msg.data?.type}`);
           if (msg.data?.type === "accountSnapshot" || msg.data?.type === "accountUpdate") {
             const margin = msg.data.margin || {};
-            const newBalance = parseFloat(
-              margin.availableBalance || 
-              margin.totalMarginBalance || 
-              margin.withdrawableBalance || 
-              margin.equity ||
-              "0"
-            );
+            const newBalance = parseFloat(margin.availableBalance || margin.totalMarginBalance || margin.withdrawableBalance || "0");
             
             if (!isNaN(newBalance)) {
               botBalance = newBalance;
+              console.log(`[BulkWS] Balance Updated: $${botBalance}`);
+            } else {
+              console.warn(`[BulkWS] Received invalid balance:`, margin);
             }
             
             if (msg.data.positions) {
               botPositions = msg.data.positions;
             }
             
-            broadcast({ 
-              type: "bot_update", 
-              data: { 
-                balance: botBalance, 
-                positions: botPositions,
-                address: this.address,
-                hasSession: true,
-                exchangeConnected: true
-              } 
-            });
+            broadcast({ type: "bot_update", data: { balance: botBalance, positions: botPositions } });
           }
+        } else if (msg.type === "error") {
+          console.error(`[BulkWS] Error:`, msg.message);
+          addBotLog(`❌ Exchange Error: ${msg.message}`);
         }
       } catch (e) {
         console.error("[BulkWS] Message Parse Error:", e);
       }
     });
-
-    this.ws.on("error", (err) => {
-      console.error("[BulkWS] WebSocket Error:", err.message);
-      addBotLog(`⚠️ Exchange Connection Error: ${err.message}`);
-      broadcast({ type: "bot_update", data: { exchangeConnected: false } });
-    });
-
-    this.ws.on("close", () => { 
-      console.log("[BulkWS] Connection closed.");
-      clearInterval(pingInterval);
-      broadcast({ type: "bot_update", data: { exchangeConnected: false } });
-      // Auto-reconnect if session is still active
-      if (this.token) {
-        setTimeout(() => this.connect(), 5000);
-      }
-    });
+    this.ws.on("close", () => { if (botEnabled) setTimeout(() => this.connect(), 5000); });
   }
 
-  async sendActions(actions: any[]) {
-    // Ensure we are connected before sending
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      if (this.token) {
-        addBotLog("🔄 Reconnecting to Exchange...");
-        this.connect();
-        // Wait a bit for connection
-        await new Promise(r => setTimeout(r, 2000));
-      }
-      
-      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-        addBotLog("❌ Trade failed: Not connected to Exchange. Please try again in a moment.");
-        return;
-      }
-    }
+  async sendAction(method: string, params: any) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    const ts = Date.now();
     
-    try {
-      // Use bulk-keychain for signing
-      // For single actions, signGroup([action]) is fine, but let's be explicit
-      const signed = actions.length === 1 
-        ? this.signer.sign(actions[0]) 
-        : this.signer.signGroup(actions);
-      
-      const payload = {
-        actions: JSON.parse(signed.actions),
-        nonce: signed.nonce,
-        account: signed.account,
-        signer: signed.signer,
-        signature: signed.signature
-      };
+    const action = { [method]: params };
 
-      console.log(`[BulkClient] Sending Action: ${JSON.stringify(payload).slice(0, 150)}...`);
+    // ترتيب المفاتيح مهم — مثل Python OrderedDict
+    const payload = {
+      account: this.address,
+      actions: [action],
+      nonce: ts,
+      type: "action"
+    };
 
-      const msg = {
-        method: "post",
-        id: Date.now(),
-        request: {
-          type: "action",
-          payload
+    // ← مهم جداً: بدون مسافات مثل Python separators=(',', ':')
+    const payloadJson = JSON.stringify(payload, null, 0)
+      .replace(/\s/g, '');
+
+    const signatureBytes = nacl.sign.detached(
+      Buffer.from(payloadJson),
+      this.sessionKeyPair.secretKey
+    );
+    const signature = bs58.encode(signatureBytes);
+    const signer = bs58.encode(this.sessionKeyPair.publicKey);
+
+    const msg = {
+      method: "post",
+      id: ts,
+      request: {
+        type: "action",
+        payload: {
+          ...payload,
+          signature,
+          signer
         }
-      };
-      
-      this.ws.send(JSON.stringify(msg));
-    } catch (e) {
-      console.error("[BulkClient] Signing Error:", e);
-      addBotLog(`❌ Signing Error: ${e instanceof Error ? e.message : String(e)}`);
-    }
+      }
+    };
+    
+    this.ws.send(JSON.stringify(msg));
   }
 
   async setLeverage(symbol: string, leverage: number) {
-    await this.sendActions([{ updateUserSettings: { m: { [symbol]: leverage } } }]);
+    // Correct format from Python: {"updateUserSettings": {"m": {symbol: int(leverage)}}}
+    await this.sendAction("updateUserSettings", { m: { [symbol]: leverage } });
     addBotLog(`Updated Leverage for ${symbol} to ${leverage}x`);
   }
 
-  async placeBracketOrder(symbol: string, side: 'buy' | 'sell', size: number, entryPrice: number, slPrice: number, tpPrice: number) {
-    const actions = [
-      {
-        type: 'order',
-        symbol,
-        isBuy: side === 'buy',
-        price: entryPrice,
-        size,
-        orderType: { type: 'limit', tif: 'GTC' }
-      },
-      {
-        type: 'stop',
-        symbol,
-        isBuy: side === 'sell',
-        size,
-        triggerPrice: slPrice,
-        limitPrice: slPrice // Market-style trigger if same as trigger
-      },
-      {
-        type: 'takeProfit',
-        symbol,
-        isBuy: side === 'sell',
-        size,
-        triggerPrice: tpPrice,
-        limitPrice: tpPrice
-      }
-    ];
-
-    await this.sendActions(actions);
-    addBotLog(`🚀 Bracket Order Sent for ${symbol} | Size: ${size}`);
-    addBotLog(`   Entry: ${entryPrice.toFixed(2)} | SL: ${slPrice.toFixed(2)} | TP: ${tpPrice.toFixed(2)}`);
-  }
-
   async placeOrder(symbol: string, side: 'buy' | 'sell', size: number, price: number = 0, typeOverride?: 'market' | 'limit') {
-    const finalType = typeOverride || botOrderType;
-    const action = {
-      type: 'order',
-      symbol,
-      isBuy: side === 'buy',
-      price: finalType === 'limit' ? price : 0,
-      size,
-      orderType: finalType === 'limit' 
-        ? { type: 'limit', tif: 'GTC' } 
-        : { type: 'market', isMarket: true, triggerPx: 0 }
+    // Formatting size based on asset (from Python logic)
+    const formattedSize = symbol.startsWith("BTC") ? size.toFixed(4) : size.toFixed(2);
+    
+    // Python order structure: {"m": {"b": is_buy, "c": symbol, "r": False, "sz": size}}
+    const params: any = {
+      b: side === 'buy',
+      c: symbol,
+      r: false,
+      sz: formattedSize
     };
 
-    const typeLabel = finalType.toUpperCase();
-    await this.sendActions([action]);
-    addBotLog(`Placed ${typeLabel} ${side.toUpperCase()} order for ${symbol} | Size: ${size}${price > 0 ? ` | Price: ${price}` : ''}`);
+    const finalType = typeOverride || botOrderType;
+
+    if (finalType === 'limit' && price > 0) {
+      params.p = price.toString();
+      params.tif = "gtc"; // Good Till Cancelled for limit orders
+    } else {
+      params.p = "0"; // 0 means market
+      params.tif = "ioc"; // Immediate Or Cancel for market orders
+    }
+    
+    const typeLabel = finalType === 'auto' ? 'AUTO' : finalType.toUpperCase();
+    await this.sendAction("m", params);
+    addBotLog(`Placed ${typeLabel} ${side.toUpperCase()} order for ${symbol} | Size: ${formattedSize}${params.p !== "0" ? ` | Price: ${price}` : ''}`);
   }
 
   async closePosition(symbol: string, size: number, side: string) {
-    const action = {
-      type: 'order',
-      symbol,
-      isBuy: side === 'short', // Buy to close short, Sell to close long
-      price: 0,
-      size: Math.abs(size),
-      orderType: { type: 'market', isMarket: true, triggerPx: 0 }
+    const formattedSize = symbol.startsWith("BTC") ? Math.abs(size).toFixed(4) : Math.abs(size).toFixed(2);
+    const params = {
+      b: side === 'short', // if closing short, we need to buy
+      c: symbol,
+      r: true, // reduceOnly
+      sz: formattedSize,
+      p: "0", // market
+      tif: "ioc"
     };
-    await this.sendActions([action]);
+    await this.sendAction("m", params);
     addBotLog(`Closing ${side.toUpperCase()} position for ${symbol}`);
   }
 
@@ -775,54 +469,28 @@ const runAutoTrader = async () => {
         ? { size: parseFloat(pos.size), entryPrice: parseFloat(pos.price) } 
         : null;
 
-      // --- Pure Algorithmic Analysis (No AI) ---
-      const decision = getTradeDecision(history, botBalance, symbol, currentPosition, 0); // newsScore = 0
+      const decision = getTradeDecision(history, botBalance, symbol, currentPosition);
       const currentPrice = history[history.length - 1].close;
-      const ind = computeIndicators(history);
       
       addBotLog(`📊 ${sym} | ${decision.regime} | [${decision.strategy}] | Score: ${decision.score.toFixed(0)} | → ${decision.action}`);
       if (decision.reason) addBotLog(`   ${decision.reason}`);
 
-      // 1. Correlation Check
-      const sameDirectionTrade = botPositions.find(p => {
-        const pSize = parseFloat(p.size);
-        if (decision.action === 'BUY' && pSize > 0 && p.symbol !== symbol) return true;
-        if (decision.action === 'SELL' && pSize < 0 && p.symbol !== symbol) return true;
-        return false;
-      });
-
-      if ((decision.action === 'BUY' || decision.action === 'SELL') && !currentPosition && sameDirectionTrade) {
-        addBotLog(`⏭️ Skipping ${sym} ${decision.action} due to correlation with ${sameDirectionTrade.symbol}`);
-        continue;
-      }
-
-      // 2. Balance Check
+      // Check for over-trading
       if ((decision.action === 'BUY' || decision.action === 'SELL') && !currentPosition) {
-        if (botBalance < 10) {
-          addBotLog(`⚠️ Insufficient balance ($${botBalance.toFixed(2)}) to open ${sym}.`);
-          continue;
-        }
-        
         if (botPositions.length >= RISK_CONFIG.maxOpenPositions) {
           addBotLog(`⚠️ Max positions reached (${RISK_CONFIG.maxOpenPositions}). Skipping ${sym}.`);
           continue;
         }
       }
 
-      // Calculate SL and TP prices
-      const slDistance = ind.atr * RISK_CONFIG.initialSLATRMult;
-      const tpDistance = slDistance * RISK_CONFIG.tpRRRatio;
-
       switch (decision.action) {
         case 'BUY':
-          const buySL = currentPrice - slDistance;
-          const buyTP = currentPrice + tpDistance;
-          await bulkClient.placeBracketOrder(symbol, "buy", decision.size, currentPrice, buySL, buyTP);
+          const buyType = botOrderType === 'auto' ? decision.orderType : botOrderType;
+          await bulkClient.placeOrder(symbol, "buy", decision.size, currentPrice, buyType);
           break;
         case 'SELL':
-          const sellSL = currentPrice + slDistance;
-          const sellTP = currentPrice - tpDistance;
-          await bulkClient.placeBracketOrder(symbol, "sell", decision.size, currentPrice, sellSL, sellTP);
+          const sellType = botOrderType === 'auto' ? decision.orderType : botOrderType;
+          await bulkClient.placeOrder(symbol, "sell", decision.size, currentPrice, sellType);
           break;
         case 'CLOSE_LONG':
           if (currentPosition) await bulkClient.closePosition(symbol, currentPosition.size, "long");
@@ -831,6 +499,7 @@ const runAutoTrader = async () => {
           if (currentPosition) await bulkClient.closePosition(symbol, currentPosition.size, "short");
           break;
         default:
+          // HOLD - do nothing
           break;
       }
     } catch (err: any) {
@@ -843,108 +512,14 @@ setInterval(runAutoTrader, 5 * 60 * 1000);
 
 // --- SERVER START ---
 async function startServer() {
-  // Initialize WASM
-  try {
-    const wasmPath = path.join(__dirname, "node_modules", "bulk-keychain-wasm", "bulk_keychain_wasm_bg.wasm");
-    if (fs.existsSync(wasmPath)) {
-      const wasmBuffer = fs.readFileSync(wasmPath);
-      await init({ module_or_path: wasmBuffer });
-      console.log("[WASM] bulk-keychain initialized from buffer");
-    } else {
-      // Fallback for different environments
-      const altPath = path.join(process.cwd(), "node_modules", "bulk-keychain-wasm", "bulk_keychain_wasm_bg.wasm");
-      if (fs.existsSync(altPath)) {
-        const wasmBuffer = fs.readFileSync(altPath);
-        await init({ module_or_path: wasmBuffer });
-        console.log("[WASM] bulk-keychain initialized from alt buffer");
-      } else {
-        await init();
-        console.log("[WASM] bulk-keychain initialized (default)");
-      }
-    }
-  } catch (e) {
-    console.error("[WASM] Failed to initialize:", e);
-  }
-
-  // --- RESTORE SESSION ON STARTUP ---
-  const savedSession = loadSession();
-  if (savedSession) {
-    // 1. Restore pending session if user was in middle of signing
-    if (savedSession.pendingSession) {
-      const ps = savedSession.pendingSession;
-      const age = Date.now() - ps.timestamp;
-      // Valid for 10 mins only
-      if (age < 10 * 60 * 1000) {
-        pendingSessions.set(ps.address, {
-          message: ps.message,
-          sessionPrivKey: ps.sessionPrivKey,
-          timestamp: ps.timestamp
-        });
-        console.log(`[Bot] Restored pending session for ${ps.address.slice(0, 6)}... (${Math.ceil(age/1000)}s old)`);
-      } else {
-        console.log("[Bot] Pending session expired, skipping restore");
-        const cleaned = { ...savedSession };
-        delete cleaned.pendingSession;
-        saveSession(cleaned);
-      }
-    }
-
-    // 2. Restore active BulkClient
-    console.log("[Bot] Found saved session for:", savedSession.address);
-    try {
-      const keyStr = savedSession.agentPrivKey || savedSession.sessionPrivKey;
-      if (keyStr && savedSession.token) {
-        const keypair = WasmKeypair.fromBase58(keyStr);
-        bulkClient = new BulkClient(keypair);
-        bulkClient.setToken(savedSession.token);
-        bulkClient.setAddress(savedSession.address);
-        bulkClient.connect();
-        botEnabled = savedSession.botEnabled ?? true;
-        botStatus = botEnabled ? "Monitoring" : "Idle";
-        addBotLog(`Session Restored for ${savedSession.address.slice(0, 6)}...`);
-
-        // Check if token is still valid after 30s
-        setTimeout(async () => {
-          if (!bulkClient || !bulkClient.isConnected()) {
-            console.log("[Bot] Restored token expired, clearing session");
-            addBotLog("Session token expired — please re-authorize.");
-            bulkClient = null;
-            botEnabled = false;
-            botStatus = "Idle";
-            const s = loadSession() || {};
-            delete s.token;
-            saveSession(s);
-          }
-        }, 30000);
-      }
-    } catch (e) {
-      console.error("Failed to restore session:", e);
-    }
-  }
-
-  // FINAL RADICAL SOLUTION: Serve dist if it exists, otherwise use Vite.
-  // This ensures Railway ALWAYS shows the UI using the pre-built files I just generated.
-  const distPath = path.join(process.cwd(), "dist");
-  
-  if (fs.existsSync(distPath)) {
-    console.log("[Server] Found pre-built assets. Serving statically for maximum stability.");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      const indexPath = path.join(distPath, "index.html");
-      if (fs.existsSync(indexPath)) {
-        res.sendFile(indexPath);
-      } else {
-        res.status(500).send("<h1>Frontend Error</h1><p>index.html missing in dist. Please Redeploy.</p>");
-      }
-    });
-  } else {
-    console.log("[Server] No dist folder found. Falling back to Vite Middleware.");
+  if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import("vite");
-    const vite = await createViteServer({ 
-      server: { middlewareMode: true }, 
-      appType: "spa" 
-    });
+    const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
     app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), "dist");
+    app.use(express.static(distPath));
+    app.get("*", (req, res) => res.sendFile(path.join(distPath, "index.html")));
   }
 
   const PORT = Number(process.env.PORT) || 3000;

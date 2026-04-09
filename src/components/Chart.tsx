@@ -1,4 +1,4 @@
-import * as React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { createChart, ColorType, IChartApi, ISeriesApi, CandlestickData, UTCTimestamp } from 'lightweight-charts';
 import { PriceData, Timeframe } from '../types.js';
 import { Loader2, Info, Maximize2 } from 'lucide-react';
@@ -18,12 +18,12 @@ export const Chart: React.FC<ChartProps> = ({
   timeframe,
   onTimeframeChange
 }) => {
-  const containerRef = React.useRef<HTMLDivElement>(null);
-  const chartContainerRef = React.useRef<HTMLDivElement>(null);
-  const chartRef = React.useRef<IChartApi | null>(null);
-  const candlestickSeriesRef = React.useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const chartContainerRef = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<IChartApi | null>(null);
+  const candlestickSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!chartContainerRef.current) return;
 
     // Initialize chart
@@ -81,20 +81,41 @@ export const Chart: React.FC<ChartProps> = ({
     };
   }, [symbol]); // Re-init only when symbol changes
 
-  React.useEffect(() => {
+  const lastDataRef = useRef<PriceData | null>(null);
+
+  useEffect(() => {
     if (!candlestickSeriesRef.current || data.length === 0) return;
 
-    // Format data for lightweight-charts
-    const formattedData: CandlestickData[] = data.map(d => ({
-      time: (d.time / 1000) as UTCTimestamp,
-      open: d.open,
-      high: d.high,
-      low: d.low,
-      close: d.close,
-    }));
-
-    candlestickSeriesRef.current.setData(formattedData);
-  }, [data]); // Update data without re-initializing the chart
+    const lastCandle = data[data.length - 1];
+    const prevData = data.slice(0, -1);
+    
+    // If only the last candle changed (price update), use update()
+    if (lastDataRef.current && 
+        data.length > 1 && 
+        data[data.length - 2].time === lastDataRef.current.time &&
+        lastCandle.time === lastDataRef.current.time) {
+      
+      candlestickSeriesRef.current.update({
+        time: (lastCandle.time / 1000) as UTCTimestamp,
+        open: lastCandle.open,
+        high: lastCandle.high,
+        low: lastCandle.low,
+        close: lastCandle.close,
+      });
+    } else {
+      // Full data update (timeframe change or initial load)
+      const formattedData: CandlestickData[] = data.map(d => ({
+        time: (d.time / 1000) as UTCTimestamp,
+        open: d.open,
+        high: d.high,
+        low: d.low,
+        close: d.close,
+      }));
+      candlestickSeriesRef.current.setData(formattedData);
+    }
+    
+    lastDataRef.current = lastCandle;
+  }, [data]);
 
   const toggleFullscreen = () => {
     if (!containerRef.current) return;

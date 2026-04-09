@@ -8,8 +8,8 @@ export const RISK_CONFIG = {
   maxRiskPerTrade:    0.02,   // Max loss per trade = 2% of balance
   maxTotalExposure:   0.06,   // Max total exposure = 6% of balance (3 trades)
   maxOpenPositions:   3,      // Max open positions at the same time
-  minScoreToTrade:    72,     // New threshold: score > 72 for BUY
-  highConfScore:      82,     // High score = larger size
+  minScoreToTrade:    68,     // Min score to open a trade
+  highConfScore:      80,     // High score = larger size
   trailingATRMult:    1.2,    // ATR multiplier for Trailing Stop
   initialSLATRMult:   1.5,    // ATR multiplier for initial Stop Loss
   tpRRRatio:          2.5,    // TP/SL ratio (Risk:Reward = 1:2.5)
@@ -94,120 +94,73 @@ export function detectMarketRegime(ind: any): MarketRegime {
   const bullStack = ind.ema9 > ind.ema21 && ind.ema21 > ind.ema50;
   const bearStack = ind.ema9 < ind.ema21 && ind.ema21 < ind.ema50;
 
-  // 1. Breakout: BB Expansion + Volume
-  if (bbWidth > 6 && Math.abs(ind.obvSlope) > 0.8) {
+  if (bbWidth > 6 && ind.volatility > 3 && Math.abs(ind.obvSlope) > 0.5) {
     return 'BREAKOUT';
   }
-  // 2. Trending: ADX > 25 + EMA Stack
   if (adxVal > 25 && (bullStack || bearStack)) {
     return 'TRENDING';
   }
-  // 3. Ranging: ADX < 20 + Narrow BB
-  if (adxVal < 20 && bbWidth < 3) {
+  if (adxVal < 20 && bbWidth < 4) {
     return 'RANGING';
   }
-  
   return 'UNCERTAIN';
 }
 
-function scoreTrendLayer(ind: any): number {
+function scoreTrend(ind: any): number {
   let score = 50;
-  // EMA Stack (40% of this layer)
   if (ind.ema9 > ind.ema21 && ind.ema21 > ind.ema50 && ind.ema50 > ind.ema200) score += 25;
   else if (ind.ema9 < ind.ema21 && ind.ema21 < ind.ema50 && ind.ema50 < ind.ema200) score -= 25;
-  
-  // Position relative to EMA200 (30%)
-  if (ind.price > ind.ema200) score += 15;
-  else if (ind.price < ind.ema200) score -= 15;
-  
-  // ADX Strength (30%) - Fix: Only trust ADX if it exists and is not zero
-  if (ind.adx && ind.adx.adx > 25) {
-    if (ind.ema9Slope > 0) score += 10;
-    else if (ind.ema9Slope < 0) score -= 10;
-  }
-  
-  return Math.max(0, Math.min(100, score));
+  if (ind.macd?.MACD > ind.macd?.signal && ind.macd?.histogram > 0) score += 15;
+  if (ind.macd?.MACD < ind.macd?.signal && ind.macd?.histogram < 0) score -= 15;
+  if (ind.rsi > 55 && ind.rsi < 72) score += 10;
+  if (ind.rsi < 45 && ind.rsi > 28) score -= 10;
+  if (ind.ema9Slope > 0) score += 10; else score -= 10;
+  return Math.max(5, Math.min(95, score));
 }
 
-function scoreMomentumLayer(ind: any): number {
+function scoreReversion(ind: any): number {
   let score = 50;
-  // MACD (40%)
-  if (ind.macd?.MACD > ind.macd?.signal && ind.macd?.histogram > 0) score += 20;
-  else if (ind.macd?.MACD < ind.macd?.signal && ind.macd?.histogram < 0) score -= 20;
-  
-  // RSI (30%)
-  if (ind.rsi > 50 && ind.rsi < 70) score += 15;
-  else if (ind.rsi < 50 && ind.rsi > 30) score -= 15;
-  
-  // OBV Volume (30%)
+  if (ind.bb) {
+    const pos = (ind.price - ind.bb.lower) / (ind.bb.upper - ind.bb.lower);
+    if (pos < 0.1) score += 30;
+    if (pos > 0.9) score -= 30;
+  }
+  if (ind.rsi < 25) score += 25;
+  if (ind.rsi > 75) score -= 25;
+  if (ind.stoch && ind.stoch.k > ind.stoch.d && ind.stoch.k < 25) score += 20;
+  if (ind.stoch && ind.stoch.k < ind.stoch.d && ind.stoch.k > 75) score -= 20;
+  return Math.max(5, Math.min(95, score));
+}
+
+function scoreBreakout(ind: any): number {
+  let score = 50;
+  if (ind.price >= ind.recentHigh * 0.998) score += 25;
+  if (ind.price <= ind.recentLow * 1.002) score -= 25;
   if (ind.obvSlope > 0.5) score += 15;
-  else if (ind.obvSlope < -0.5) score -= 15;
-  
-  return Math.max(0, Math.min(100, score));
-}
-
-function scoreEntryLayer(ind: any): number {
-  let score = 50;
-  // Stochastic (40%)
-  if (ind.stoch && ind.stoch.k > ind.stoch.d && ind.stoch.k < 30) score += 20;
-  else if (ind.stoch && ind.stoch.k < ind.stoch.d && ind.stoch.k > 70) score -= 20;
-  
-  // Bollinger & VWAP (60%)
-  if (ind.bb) {
-    const pos = (ind.price - ind.bb.lower) / (ind.bb.upper - ind.bb.lower);
-    if (pos < 0.2 && ind.price > ind.vwap) score += 15;
-    else if (pos > 0.8 && ind.price < ind.vwap) score -= 15;
-  }
-  
-  return Math.max(0, Math.min(100, score));
-}
-
-function scoreRangingLayer(ind: any): number {
-  let score = 50;
-  // Mean Reversion: BB + RSI + Stoch (Fix: Add confirmations)
-  if (ind.bb) {
-    const pos = (ind.price - ind.bb.lower) / (ind.bb.upper - ind.bb.lower);
-    if (pos < 0.15 && ind.rsi < 35 && ind.stoch?.k < 25) score += 30;
-    if (pos > 0.85 && ind.rsi > 65 && ind.stoch?.k > 75) score -= 30;
-  }
-  return Math.max(0, Math.min(100, score));
+  if (ind.obvSlope < -0.5) score -= 15;
+  return Math.max(5, Math.min(95, score));
 }
 
 export function calculateTechnicalScore(indicators: any, lastPrice: number): number {
   const regime = detectMarketRegime(indicators);
-  
-  if (regime === 'RANGING') {
-    return scoreRangingLayer(indicators);
+  switch (regime) {
+    case 'TRENDING': return scoreTrend(indicators);
+    case 'RANGING': return scoreReversion(indicators);
+    case 'BREAKOUT': return (scoreBreakout(indicators) * 0.6 + scoreTrend(indicators) * 0.4);
+    default: return (scoreTrend(indicators) + scoreReversion(indicators) + scoreBreakout(indicators)) / 3;
   }
-  
-  const trend = scoreTrendLayer(indicators);
-  const momentum = scoreMomentumLayer(indicators);
-  const entry = scoreEntryLayer(indicators);
-  
-  // Weighted Average: 40% Trend, 35% Momentum, 25% Entry
-  return (trend * 0.4) + (momentum * 0.35) + (entry * 0.25);
 }
 
 export function calculatePositionSize(balance: number, price: number, atr: number, score: number, symbol: string): number {
   const maxLoss = balance * RISK_CONFIG.maxRiskPerTrade;
   const slDistance = atr * RISK_CONFIG.initialSLATRMult;
-  
-  // Dynamic Sizing: (Balance * 2%) / SL Distance
   let size = maxLoss / slDistance;
+  const signalStrength = Math.abs(score - 50) / 50;
+  size *= (0.5 + signalStrength);
   
-  // Multiplier: Increase up to 50% for strong signals (>85 or <15), decrease for weak ones
-  const signalStrength = Math.abs(score - 50) / 50; // 0 to 1
-  if (score > 85 || score < 15) {
-    size *= 1.5; // +50% for very strong signals
-  } else if (score > 75 || score < 25) {
-    size *= 1.2; // +20% for strong signals
-  } else {
-    size *= (0.7 + signalStrength); // Reduce for weaker signals
-  }
-  
-  if (symbol.startsWith('BTC')) return Math.max(0.001, Math.min(0.2, parseFloat(size.toFixed(4))));
-  if (symbol.startsWith('ETH')) return Math.max(0.01, Math.min(2.0, parseFloat(size.toFixed(3))));
-  return Math.max(0.1, Math.min(200.0, parseFloat(size.toFixed(2))));
+  if (symbol.startsWith('BTC')) return Math.max(0.001, Math.min(0.1, parseFloat(size.toFixed(4))));
+  if (symbol.startsWith('ETH')) return Math.max(0.01, Math.min(1.0, parseFloat(size.toFixed(3))));
+  return Math.max(0.1, Math.min(100.0, parseFloat(size.toFixed(2))));
 }
 
 export interface TradeDecision {
@@ -225,25 +178,15 @@ export function getTradeDecision(
   data: PriceData[],
   balance: number,
   symbol: string,
-  currentPosition: any,
-  newsScore?: number
+  currentPosition: any
 ): TradeDecision {
   if (data.length < 200) return { action: 'HOLD', size: 0, score: 50, strategy: '-', regime: 'UNCERTAIN', confidence: 'LOW', reason: 'Insufficient data', orderType: 'market' };
 
   const ind = computeIndicators(data);
   const regime = detectMarketRegime(ind);
-  const techScore = calculateTechnicalScore(ind, ind.price);
+  const score = calculateTechnicalScore(ind, ind.price);
   
-  // Combine technical and news scores if newsScore is provided
-  const score = newsScore !== undefined ? calculateFinalScore(techScore, newsScore) : techScore;
-  
-  // --- Volatility Filter (Fix: Skip if spread/volatility too low) ---
-  const bbWidth = ind.bb ? (ind.bb.upper - ind.bb.lower) / ind.bb.middle * 100 : 5;
-  if (bbWidth < 0.5) {
-    return { action: 'HOLD', size: 0, score, strategy: '-', regime, confidence: 'LOW', reason: 'Market too quiet (Low Volatility)', orderType: 'market' };
-  }
-
-  const confidence = score > 82 || score < 18 ? 'HIGH' : score > 72 || score < 28 ? 'MEDIUM' : 'LOW';
+  const confidence = score > 80 || score < 20 ? 'HIGH' : score > 70 || score < 30 ? 'MEDIUM' : 'LOW';
 
   // --- Smart Order Type Selection Algorithm ---
   const volatility = ind.atr / ind.price;
@@ -258,11 +201,11 @@ export function getTradeDecision(
 
   if (currentPosition && currentPosition.size !== 0) {
     const isLong = currentPosition.size > 0;
-    if (isLong && score < 40) {
+    if (isLong && score < 35) {
       const action = 'CLOSE_LONG';
       return { action, size: Math.abs(currentPosition.size), score, strategy: 'Exit', regime, confidence, reason: 'Signal reversal', orderType: getOrderType(action) };
     }
-    if (!isLong && score > 60) {
+    if (!isLong && score > 65) {
       const action = 'CLOSE_SHORT';
       return { action, size: Math.abs(currentPosition.size), score, strategy: 'Exit', regime, confidence, reason: 'Signal reversal', orderType: getOrderType(action) };
     }
@@ -289,11 +232,11 @@ export function calculateFinalScore(technicalScore: number, newsScore: number): 
 }
 
 export function getRecommendation(finalScore: number, techScore: number): string {
-  if (techScore > 85) return "STRONG BUY (CONFLUENCE)";
-  if (techScore > 72) return "BUY (CONFLUENCE)";
-  if (techScore < 15) return "STRONG SELL (CONFLUENCE)";
-  if (techScore < 28) return "SELL (CONFLUENCE)";
-  return "NEUTRAL / CONSOLIDATION";
+  if (techScore > 82) return "STRONG BUY (TREND)";
+  if (techScore > 62) return "BUY (TREND)";
+  if (techScore < 18) return "STRONG SELL (TREND)";
+  if (techScore < 38) return "SELL (TREND)";
+  return "NEUTRAL / SIDEWAYS";
 }
 
 export function backtestStrategy(data: PriceData[]): { wins: number; losses: number; winRate: number } {

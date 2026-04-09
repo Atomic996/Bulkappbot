@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import * as React from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react';
 import { WalletAdapterNetwork } from '@solana/wallet-adapter-base';
 import { 
@@ -22,14 +22,14 @@ export default function App() {
   const network = WalletAdapterNetwork.Mainnet;
 
   // You can also provide a custom RPC endpoint.
-  const endpoint = React.useMemo(() => clusterApiUrl(network), [network]);
+  const endpoint = useMemo(() => clusterApiUrl(network), [network]);
 
   // Provide Phantom wallet for all devices
-  const wallets = React.useMemo(() => [
+  const wallets = useMemo(() => [
     new PhantomWalletAdapter()
   ], []);
 
-  const onError = React.useCallback((error: any) => {
+  const onError = useCallback((error: any) => {
     console.error("Wallet Error:", error instanceof Error ? error.message : String(error));
   }, []);
 

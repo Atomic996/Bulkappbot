@@ -1,4 +1,4 @@
-import * as React from 'react';
+import React, { useEffect, useRef, memo } from 'react';
 import { Maximize2 } from 'lucide-react';
 
 interface TradingViewWidgetProps {
@@ -6,7 +6,7 @@ interface TradingViewWidgetProps {
 }
 
 const TradingViewWidget: React.FC<TradingViewWidgetProps> = ({ symbol }) => {
-  const containerRef = React.useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const toggleFullscreen = () => {
     if (!containerRef.current) return;
@@ -41,4 +41,4 @@ const TradingViewWidget: React.FC<TradingViewWidgetProps> = ({ symbol }) => {
   );
 };
 
-export default React.memo(TradingViewWidget);
+export default memo(TradingViewWidget);

@@ -1,8 +1,7 @@
-import * as React from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useWalletModal } from '@solana/wallet-adapter-react-ui';
-import axios from 'axios';
 import { 
   Activity, 
   RefreshCw, 
@@ -24,10 +23,8 @@ import {
   BarChart3,
   Clock,
   Wallet,
-  ChevronDown,
-  Lock
+  ChevronDown
 } from 'lucide-react';
-import bs58 from 'bs58';
 import { AssetSignal, PriceData, NewsItem, Timeframe } from '../types.js';
 import { fetchHistoricalData, fetchNews } from '../lib/api.js';
 import { computeIndicators, calculateTechnicalScore, backtestStrategy, calculateFinalScore, getRecommendation } from '../lib/indicators.js';
@@ -55,25 +52,22 @@ const MemoizedNewsFeed = React.memo(NewsFeed);
 const MemoizedChart = React.memo(Chart);
 
 export const Dashboard: React.FC = () => {
-  const [selectedSymbol, setSelectedSymbol] = React.useState('BTC');
-  const [timeframe, setTimeframe] = React.useState<Timeframe>('1D');
-  const [signals, setSignals] = React.useState<Record<string, AssetSignal>>({});
-  const [historicalData, setHistoricalData] = React.useState<Record<string, PriceData[]>>({});
-  const [news, setNews] = React.useState<Record<string, NewsItem[]>>({});
-  const [newsError, setNewsError] = React.useState<Record<string, string | null>>({});
-  const [isLoading, setIsLoading] = React.useState(true);
-  const [isRefreshing, setIsRefreshing] = React.useState(false);
-  const [activeTab, setActiveTab] = React.useState<'assets' | 'analysis' | 'technical' | 'bulk' | 'news' | 'bot'>('analysis');
-  const [alerts, setAlerts] = React.useState<{ id: string; message: string; type: 'info' | 'warning' | 'success' }[]>([]);
-  const [lastAnalysisTime, setLastAnalysisTime] = React.useState<Record<string, number>>({});
-  const [isAuthorizing, setIsAuthorizing] = React.useState(false);
+  const [selectedSymbol, setSelectedSymbol] = useState('BTC');
+  const [timeframe, setTimeframe] = useState<Timeframe>('1D');
+  const [signals, setSignals] = useState<Record<string, AssetSignal>>({});
+  const [historicalData, setHistoricalData] = useState<Record<string, PriceData[]>>({});
+  const [news, setNews] = useState<Record<string, NewsItem[]>>({});
+  const [newsError, setNewsError] = useState<Record<string, string | null>>({});
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [activeTab, setActiveTab] = useState<'assets' | 'analysis' | 'technical' | 'bulk' | 'news' | 'bot'>('analysis');
+  const [alerts, setAlerts] = useState<{ id: string; message: string; type: 'info' | 'warning' | 'success' }[]>([]);
+  const [lastAnalysisTime, setLastAnalysisTime] = useState<Record<string, number>>({});
 
-  const { connected, publicKey, signMessage, disconnect } = useWallet();
-  const { setVisible } = useWalletModal();
-  const wsRef = React.useRef<WebSocket | null>(null);
-  const priceUpdateBuffer = React.useRef<Record<string, number>>({});
+  const wsRef = useRef<WebSocket | null>(null);
+  const priceUpdateBuffer = useRef<Record<string, number>>({});
 
-  const addAlert = React.useCallback((message: string, type: 'info' | 'warning' | 'success' = 'info') => {
+  const addAlert = useCallback((message: string, type: 'info' | 'warning' | 'success' = 'info') => {
     const id = Math.random().toString(36).substring(7);
     setAlerts(prev => [{ id, message, type }, ...prev].slice(0, 3));
     setTimeout(() => {
@@ -81,58 +75,7 @@ export const Dashboard: React.FC = () => {
     }, 4000);
   }, []);
 
-  // Auto-SIWS Flow: Trigger signature request immediately after wallet connection
-  React.useEffect(() => {
-    const handleAutoAuth = async () => {
-      if (connected && publicKey && signMessage && !isAuthorizing) {
-        const hasSession = localStorage.getItem('bot_has_session') === 'true';
-        const sessionAddress = localStorage.getItem('bot_address');
-        
-        // Only authorize if no session exists or address changed
-        if (!hasSession || sessionAddress !== publicKey.toBase58()) {
-          setIsAuthorizing(true);
-          try {
-            addAlert("Authorizing secure session...", "info");
-            
-            // 1. Get SIWS message from server
-            const initRes = await axios.post(`${window.location.origin}/api/bot/auth/init`, {
-              address: publicKey.toBase58()
-            });
-            
-            const { message } = initRes.data;
-            
-            // 2. Sign the message
-            const messageBytes = new TextEncoder().encode(message);
-            const signatureBytes = await signMessage(messageBytes);
-            const signature = bs58.encode(signatureBytes);
-            
-            // 3. Send signature to server to start session
-            await axios.post(`${window.location.origin}/api/bot/auth/start`, {
-              address: publicKey.toBase58(),
-              message,
-              signature
-            });
-            
-            localStorage.setItem('bot_has_session', 'true');
-            localStorage.setItem('bot_address', publicKey.toBase58());
-            addAlert("Session Authorized Successfully", "success");
-            
-            // Reload to ensure all components pick up the new session
-            setTimeout(() => window.location.reload(), 1000);
-          } catch (err: any) {
-            console.error("Auto-authorization failed:", err);
-            addAlert(err.response?.data?.error || "Authorization failed", "warning");
-          } finally {
-            setIsAuthorizing(false);
-          }
-        }
-      }
-    };
-
-    handleAutoAuth();
-  }, [connected, publicKey, signMessage, addAlert]);
-
-  const updateAssetData = React.useCallback(async (symbol: string, currentTf: Timeframe) => {
+  const updateAssetData = useCallback(async (symbol: string, currentTf: Timeframe) => {
     try {
       // 1. Fetch history and news in parallel
       setNewsError(prev => ({ ...prev, [symbol]: null }));
@@ -204,7 +147,7 @@ export const Dashboard: React.FC = () => {
     }
   }, [addAlert]);
 
-  const refreshAll = React.useCallback(async () => {
+  const refreshAll = useCallback(async () => {
     setIsRefreshing(true);
     
     try {
@@ -224,7 +167,7 @@ export const Dashboard: React.FC = () => {
     }
   }, [updateAssetData, selectedSymbol, timeframe]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     refreshAll().catch(err => console.error("Initial refresh failed:", err instanceof Error ? err.message : String(err)));
     const interval = setInterval(() => {
       refreshAll().catch(err => console.error("Interval refresh failed:", err instanceof Error ? err.message : String(err)));
@@ -233,7 +176,7 @@ export const Dashboard: React.FC = () => {
   }, [refreshAll]);
 
   // WebSocket with Throttled Updates
-  React.useEffect(() => {
+  useEffect(() => {
     const ws = new WebSocket('wss://ws-feed.exchange.coinbase.com');
     wsRef.current = ws;
 
@@ -331,9 +274,12 @@ export const Dashboard: React.FC = () => {
     };
   }, []);
 
-  const currentSignal = React.useMemo(() => signals[selectedSymbol], [signals, selectedSymbol]);
-  const currentHistory = React.useMemo(() => historicalData[selectedSymbol] || [], [historicalData, selectedSymbol]);
-  const currentNews = React.useMemo(() => news[selectedSymbol] || [], [news, selectedSymbol]);
+  const currentSignal = useMemo(() => signals[selectedSymbol], [signals, selectedSymbol]);
+  const currentHistory = useMemo(() => historicalData[selectedSymbol] || [], [historicalData, selectedSymbol]);
+  const currentNews = useMemo(() => news[selectedSymbol] || [], [news, selectedSymbol]);
+
+  const { publicKey, connected } = useWallet();
+  const { setVisible } = useWalletModal();
 
   return (
     <div className="min-h-screen bg-[#050505] text-zinc-100 font-sans selection:bg-blue-500/30 flex flex-col overflow-hidden">
@@ -368,51 +314,16 @@ export const Dashboard: React.FC = () => {
 
           <div className="flex items-center gap-2 md:gap-3">
             {connected && publicKey ? (
-              <div className="flex items-center gap-2">
-                <div className="relative group">
-                  <button 
-                    className="flex items-center gap-2 px-4 py-2 bg-white/5 border border-white/10 rounded-full hover:bg-white/10 transition-all"
-                  >
-                    <div className={cn(
-                      "w-2 h-2 rounded-full shadow-[0_0_8px_rgba(16,185,129,0.5)]",
-                      isAuthorizing ? "bg-amber-500 animate-pulse" : "bg-emerald-500"
-                    )} />
-                    <span className="text-[10px] font-mono font-bold text-white">
-                      {publicKey.toBase58().slice(0, 4)}...{publicKey.toBase58().slice(-4)}
-                    </span>
-                    <ChevronDown size={12} className="text-zinc-500 group-hover:text-white transition-colors" />
-                  </button>
-                  
-                  {/* Dropdown Menu */}
-                  <div className="absolute right-0 top-full mt-2 w-48 bg-zinc-900 border border-white/10 rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 p-2">
-                    <div className="px-3 py-2 border-b border-white/5 mb-1">
-                      <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">Wallet Connected</p>
-                      <p className="text-[10px] font-mono text-white truncate">{publicKey.toBase58()}</p>
-                    </div>
-                    
-                    <button
-                      onClick={async () => {
-                        try {
-                          await axios.post(`${window.location.origin}/api/bot/auth/logout`);
-                          disconnect();
-                          localStorage.removeItem('bot_has_session');
-                          localStorage.removeItem('bot_address');
-                          localStorage.removeItem('walletName');
-                          window.location.reload();
-                        } catch (e) {
-                          console.error("Logout failed:", e);
-                          disconnect();
-                          window.location.reload();
-                        }
-                      }}
-                      className="w-full flex items-center gap-3 px-3 py-2 text-rose-500 hover:bg-rose-500/10 rounded-lg transition-all"
-                    >
-                      <Lock size={14} />
-                      <span className="text-[10px] font-black uppercase tracking-widest">Logout & Exit</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
+              <button 
+                onClick={() => setVisible(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-white/5 border border-white/10 rounded-full hover:bg-white/10 transition-all group"
+              >
+                <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+                <span className="text-[10px] font-mono font-bold text-white">
+                  {publicKey.toBase58().slice(0, 4)}...{publicKey.toBase58().slice(-4)}
+                </span>
+                <ChevronDown size={12} className="text-zinc-500 group-hover:text-white transition-colors" />
+              </button>
             ) : (
               <button 
                 onClick={() => setVisible(true)}

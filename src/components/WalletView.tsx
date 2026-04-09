@@ -1,4 +1,4 @@
-import * as React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { useWalletModal } from '@solana/wallet-adapter-react-ui';
 import { LAMPORTS_PER_SOL } from '@solana/web3.js';
@@ -31,9 +31,9 @@ export const WalletView: React.FC<WalletViewProps> = ({ onBack }) => {
   const { publicKey, connected, wallet, select } = useWallet();
   const { setVisible } = useWalletModal();
   const { connection } = useConnection();
-  const [balance, setBalance] = React.useState<number | null>(null);
-  const [isLoading, setIsLoading] = React.useState(false);
-  const [copied, setCopied] = React.useState(false);
+  const [balance, setBalance] = useState<number | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const fetchBalance = async () => {
     if (!publicKey) return;
@@ -48,7 +48,7 @@ export const WalletView: React.FC<WalletViewProps> = ({ onBack }) => {
     }
   };
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (connected && publicKey) {
       fetchBalance();
     }

@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx server.ts",
     "start": "tsx server.ts",
-    "build": "echo 'Skipping build, using pre-built dist folder'",
+    "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit"
@@ -23,8 +23,6 @@
     "axios": "^1.14.0",
     "bs58": "^6.0.0",
     "buffer": "^6.0.3",
-    "bulk-keychain": "^0.1.11",
-    "bulk-keychain-wasm": "^0.1.11",
     "clsx": "^2.1.1",
     "cors": "^2.8.6",
     "crypto-browserify": "^3.12.1",

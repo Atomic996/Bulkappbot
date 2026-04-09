@@ -1,4 +1,4 @@
-import * as React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { MessageSquare, Send, X, Bot, User, Sparkles } from 'lucide-react';
 import { getChatResponse } from '../lib/gemini.js';
@@ -22,19 +22,19 @@ interface Message {
 }
 
 export const ChatAdvisor: React.FC<ChatAdvisorProps> = ({ signal, news }) => {
-  const [isOpen, setIsOpen] = React.useState(false);
-  const [messages, setMessages] = React.useState<Message[]>([
+  const [isOpen, setIsOpen] = useState(false);
+  const [messages, setMessages] = useState<Message[]>([
     { id: '1', text: `Hello! I'm your AI Trading Advisor. How can I assist you with ${signal.symbol} analysis today?`, sender: 'bot' }
   ]);
-  const [input, setInput] = React.useState('');
-  const [isTyping, setIsTyping] = React.useState(false);
-  const messagesEndRef = React.useRef<HTMLDivElement>(null);
+  const [input, setInput] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  React.useEffect(() => {
+  useEffect(() => {
     scrollToBottom();
   }, [messages]);
 
